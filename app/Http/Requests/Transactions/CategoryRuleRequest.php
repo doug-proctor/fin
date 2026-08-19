@@ -40,7 +40,7 @@ class CategoryRuleRequest extends FormRequest
             'amount_min_minor' => ['nullable', 'integer'],
             'amount_max_minor' => ['nullable', 'integer'],
             'amount_minor' => ['nullable', 'integer'],
-            'booked_on' => ['nullable', 'date'],
+            'day_of_month' => ['nullable', 'integer', 'between:1,31'],
             'set_category' => ['nullable', Rule::exists(Category::class, 'value')
                 ->where('user_id', $this->user()->id)],
             'set_tags' => ['nullable', 'array'],

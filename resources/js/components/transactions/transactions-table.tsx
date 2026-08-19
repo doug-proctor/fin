@@ -302,7 +302,7 @@ export function TransactionsTable({
                                         isOverridden={transaction.overriddenFields.includes(
                                             'description',
                                         )}
-                                        className="truncate text-xs text-muted-foreground"
+                                        className="truncate text-muted-foreground"
                                     />
                                 </TableCell>
 
@@ -342,7 +342,7 @@ export function TransactionsTable({
                                     className={cn(
                                         'text-right tabular-nums',
                                         transaction.excludedFromTotals
-                                            ? 'text-muted-foreground line-through decoration-muted-foreground/60'
+                                            ? 'text-muted-foreground/50'
                                             : transaction.amountMinor < 0
                                               ? 'text-rose-600 dark:text-rose-400'
                                               : 'text-emerald-600 dark:text-emerald-400',
@@ -361,7 +361,7 @@ export function TransactionsTable({
                                         isOverridden={transaction.overriddenFields.includes(
                                             'notes',
                                         )}
-                                        className="truncate text-xs"
+                                        className="truncate"
                                     />
                                 </TableCell>
 
@@ -377,7 +377,7 @@ export function TransactionsTable({
                                                 <Badge
                                                     key={tag}
                                                     variant="outline"
-                                                    className="px-1 py-0 text-[10px]"
+                                                    className="px-1 py-0 text-sm"
                                                 >
                                                     #{tag}
                                                 </Badge>

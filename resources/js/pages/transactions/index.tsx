@@ -122,14 +122,7 @@ export default function TransactionsIndex({
                     </div>
                 </div>
 
-                <TransactionsSummary
-                    summary={summary}
-                    excludedCount={
-                        transactions.filter(
-                            (transaction) => transaction.excludedFromTotals,
-                        ).length
-                    }
-                />
+                <TransactionsSummary summary={summary} />
 
                 <TransactionsFilterBar
                     filters={filters}

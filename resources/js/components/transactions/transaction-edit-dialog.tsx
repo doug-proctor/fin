@@ -230,7 +230,6 @@ function EditTransactionForm({
                     <Textarea
                         id="notes"
                         rows={3}
-                        placeholder="Split with Sam #shared"
                         value={data.notes}
                         onChange={(event) =>
                             setData('notes', event.target.value)

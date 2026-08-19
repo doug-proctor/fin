@@ -19,7 +19,7 @@ class DatabaseSeeder extends Seeder
      *
      * @var array<string, string>
      */
-    private const CUSTOM_CATEGORIES = [
+    public const CUSTOM_CATEGORIES = [
         'category_0000B86WnKknuzF8vd1v9g' => 'Subscriptions',
         'category_0000B86WxhUOFB3OnAn0y2' => 'Mum',
         'category_0000B86Wu1Qy9CR4om4isT' => 'Reverie',

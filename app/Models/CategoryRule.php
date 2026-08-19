@@ -22,7 +22,7 @@ use Illuminate\Support\Str;
  * @property int|null $amount_min_minor
  * @property int|null $amount_max_minor
  * @property int|null $amount_minor
- * @property Carbon|null $booked_on
+ * @property int|null $day_of_month
  * @property string|null $set_category
  * @property array<int, string>|null $set_tags
  * @property int $priority
@@ -44,7 +44,7 @@ use Illuminate\Support\Str;
     'amount_min_minor',
     'amount_max_minor',
     'amount_minor',
-    'booked_on',
+    'day_of_month',
     'set_category',
     'set_tags',
     'priority',
@@ -84,7 +84,7 @@ class CategoryRule extends Model
             'amount_min_minor' => 'integer',
             'amount_max_minor' => 'integer',
             'amount_minor' => 'integer',
-            'booked_on' => 'date',
+            'day_of_month' => 'integer',
         ];
     }
 
@@ -144,10 +144,11 @@ class CategoryRule extends Model
         }
 
         /**
-         * booked_at carries a time, so equality is tested a day at a time.
-         * Anything finer would never match anything a user could type.
+         * The day of the month on its own, ignoring which month and year the
+         * transaction landed in, so a rule can follow a recurring payment
+         * that arrives on the same day every month.
          */
-        if ($this->booked_on !== null && ! $transaction->booked_at->isSameDay($this->booked_on)) {
+        if ($this->day_of_month !== null && $transaction->booked_at->day !== $this->day_of_month) {
             return false;
         }
 

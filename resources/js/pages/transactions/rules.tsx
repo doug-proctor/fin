@@ -3,7 +3,6 @@ import { Plus, StopCircle, Trash2, Wand2 } from 'lucide-react';
 import { useState } from 'react';
 import Heading from '@/components/heading';
 import InputError from '@/components/input-error';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -34,7 +33,7 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
-import { formatDate, formatMoney, parseMoneyToMinor } from '@/lib/money';
+import { formatMoney, parseMoneyToMinor } from '@/lib/money';
 import {
     apply,
     destroy,
@@ -53,13 +52,14 @@ interface Rule {
     amountMinMinor: number | null;
     amountMaxMinor: number | null;
     amountMinor: number | null;
-    bookedOn: string | null;
+    dayOfMonth: number | null;
     setCategory: string | null;
     setCategoryLabel: string | null;
     setTags: string[];
     priority: number;
     stopsProcessing: boolean;
     isActive: boolean;
+    matchCount: number;
 }
 
 interface Props {
@@ -85,6 +85,21 @@ const TYPE_LABELS: Record<string, string> = {
     starts_with: 'starts with',
     regex: 'matches regex',
 };
+
+/**
+ * 31 whatever the month. A rule pinned to the 31st simply never fires in
+ * February, which is the same answer the user would get from a date picker.
+ */
+const DAYS_OF_MONTH = Array.from({ length: 31 }, (_, index) => index + 1);
+
+function ordinal(day: number): string {
+    const suffix =
+        day % 100 >= 11 && day % 100 <= 13
+            ? 'th'
+            : ({ 1: 'st', 2: 'nd', 3: 'rd' }[day % 10] ?? 'th');
+
+    return `${day}${suffix}`;
+}
 
 /**
  * Either end of the range is optional, so the wording has to cover a rule
@@ -128,17 +143,6 @@ export default function CategoryRules({
                     title="Rules"
                     description="Give matching transactions a category, whichever account they came from"
                 />
-
-                <Alert>
-                    <AlertTitle>One taxonomy across both accounts</AlertTitle>
-                    <AlertDescription>
-                        Monzo will not share how it categorises your connected
-                        AMEX card, so rules are what keep both accounts speaking
-                        the same language. Rules run in priority order as
-                        transactions arrive, and never change a category you set
-                        yourself.
-                    </AlertDescription>
-                </Alert>
 
                 <div className="flex flex-wrap items-center gap-2">
                     <Button onClick={() => setShowForm((open) => !open)}>
@@ -208,6 +212,7 @@ export default function CategoryRules({
 
                                 <Button
                                     variant="destructive"
+                                    data-dialog-autofocus
                                     onClick={() =>
                                         router.post(
                                             apply.url(),
@@ -246,10 +251,11 @@ export default function CategoryRules({
                                 amount_min_minor: parseMoneyToMinor(amount_min),
                                 amount_max_minor: parseMoneyToMinor(amount_max),
                                 amount_minor: parseMoneyToMinor(amount),
-                                booked_on:
-                                    rest.booked_on === ''
+                                day_of_month:
+                                    rest.day_of_month === '' ||
+                                    rest.day_of_month === undefined
                                         ? null
-                                        : rest.booked_on,
+                                        : Number(rest.day_of_month),
                             };
                         }}
                         onSuccess={() => setShowForm(false)}
@@ -268,62 +274,71 @@ export default function CategoryRules({
                                     <InputError message={errors.name} />
                                 </div>
 
-                                <div className="space-y-2">
-                                    <Label htmlFor="match_field">Look at</Label>
-                                    <Select
-                                        name="match_field"
-                                        defaultValue="any"
-                                    >
-                                        <SelectTrigger id="match_field">
-                                            <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {matchFields.map((field) => (
-                                                <SelectItem
-                                                    key={field}
-                                                    value={field}
-                                                >
-                                                    {FIELD_LABELS[field] ??
-                                                        field}
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
+                                <div className="grid gap-4 sm:col-span-2 sm:grid-cols-3">
+                                    <div className="space-y-2">
+                                        <Label htmlFor="match_field">
+                                            Look at
+                                        </Label>
+                                        <Select
+                                            name="match_field"
+                                            defaultValue="any"
+                                        >
+                                            <SelectTrigger id="match_field">
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {matchFields.map((field) => (
+                                                    <SelectItem
+                                                        key={field}
+                                                        value={field}
+                                                    >
+                                                        {FIELD_LABELS[field] ??
+                                                            field}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
 
-                                <div className="space-y-2">
-                                    <Label htmlFor="match_type">Which</Label>
-                                    <Select
-                                        name="match_type"
-                                        defaultValue="contains"
-                                    >
-                                        <SelectTrigger id="match_type">
-                                            <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {matchTypes.map((type) => (
-                                                <SelectItem
-                                                    key={type}
-                                                    value={type}
-                                                >
-                                                    {TYPE_LABELS[type] ?? type}
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
+                                    <div className="space-y-2">
+                                        <Label htmlFor="match_type">
+                                            Which
+                                        </Label>
+                                        <Select
+                                            name="match_type"
+                                            defaultValue="contains"
+                                        >
+                                            <SelectTrigger id="match_type">
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {matchTypes.map((type) => (
+                                                    <SelectItem
+                                                        key={type}
+                                                        value={type}
+                                                    >
+                                                        {TYPE_LABELS[type] ??
+                                                            type}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
 
-                                <div className="space-y-2 sm:col-span-2">
-                                    <Label htmlFor="match_value">
-                                        This text
-                                    </Label>
-                                    <Input
-                                        id="match_value"
-                                        name="match_value"
-                                        placeholder="tesco"
-                                        required
-                                    />
-                                    <InputError message={errors.match_value} />
+                                    <div className="space-y-2">
+                                        <Label htmlFor="match_value">
+                                            This text
+                                        </Label>
+                                        <Input
+                                            id="match_value"
+                                            name="match_value"
+                                            placeholder="tesco"
+                                            required
+                                        />
+                                        <InputError
+                                            message={errors.match_value}
+                                        />
+                                    </div>
                                 </div>
 
                                 {/*
@@ -389,18 +404,25 @@ export default function CategoryRules({
                                 </div>
 
                                 <div className="space-y-2">
-                                    <Label htmlFor="booked_on">
-                                        Only this date
+                                    <Label htmlFor="day_of_month">
+                                        Only this day of the month
                                     </Label>
-                                    <Input
-                                        id="booked_on"
-                                        name="booked_on"
-                                        type="date"
-                                    />
-                                    <p className="text-xs text-muted-foreground">
-                                        Matches the whole day.
-                                    </p>
-                                    <InputError message={errors.booked_on} />
+                                    <Select name="day_of_month">
+                                        <SelectTrigger id="day_of_month">
+                                            <SelectValue placeholder="Any day" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {DAYS_OF_MONTH.map((day) => (
+                                                <SelectItem
+                                                    key={day}
+                                                    value={String(day)}
+                                                >
+                                                    {ordinal(day)}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                    <InputError message={errors.day_of_month} />
                                 </div>
 
                                 <div className="space-y-2">
@@ -501,6 +523,9 @@ export default function CategoryRules({
                                 <TableHead>Applies</TableHead>
                                 <TableHead>Scope</TableHead>
                                 <TableHead className="text-right">
+                                    Transactions
+                                </TableHead>
+                                <TableHead className="text-right">
                                     Priority
                                 </TableHead>
                                 <TableHead className="w-10" />
@@ -510,7 +535,7 @@ export default function CategoryRules({
                             {rules.length === 0 && (
                                 <TableRow>
                                     <TableCell
-                                        colSpan={6}
+                                        colSpan={7}
                                         className="py-12 text-center text-muted-foreground"
                                     >
                                         No rules yet. Add one to start
@@ -569,12 +594,13 @@ export default function CategoryRules({
                                                 </span>
                                             </span>
                                         )}
-                                        {rule.bookedOn !== null && (
+                                        {rule.dayOfMonth !== null && (
                                             <span className="block">
-                                                only on{' '}
+                                                only on the{' '}
                                                 <span className="text-foreground">
-                                                    {formatDate(rule.bookedOn)}
-                                                </span>
+                                                    {ordinal(rule.dayOfMonth)}
+                                                </span>{' '}
+                                                of the month
                                             </span>
                                         )}
                                     </TableCell>
@@ -600,6 +626,17 @@ export default function CategoryRules({
                                                   rule.accountId,
                                               ) ?? 'Unknown')
                                             : 'All accounts'}
+                                    </TableCell>
+                                    <TableCell className="text-right tabular-nums">
+                                        <span
+                                            className={
+                                                rule.matchCount === 0
+                                                    ? 'text-muted-foreground'
+                                                    : undefined
+                                            }
+                                        >
+                                            {rule.matchCount}
+                                        </span>
                                     </TableCell>
                                     <TableCell className="text-right tabular-nums">
                                         <span className="inline-flex items-center justify-end gap-1">
@@ -667,6 +704,7 @@ export default function CategoryRules({
 
                             <Button
                                 variant="destructive"
+                                data-dialog-autofocus
                                 onClick={() => {
                                     if (rulePendingDeletion === null) {
                                         return;

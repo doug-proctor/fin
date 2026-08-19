@@ -80,6 +80,7 @@ export default function PasskeyItem({ passkey, onDelete }: Props) {
                         </DialogClose>
                         <Button
                             variant="destructive"
+                            data-dialog-autofocus
                             onClick={handleDelete}
                             disabled={isDeleting}
                         >

@@ -144,10 +144,10 @@ test('an exact amount narrows a rule', function () {
     expect($refund->category)->toBeNull();
 });
 
-test('an exact date narrows a rule, whatever time of day it was booked', function () {
+test('a day of the month narrows a rule, whatever time of day it was booked', function () {
     CategoryRule::factory()->for($this->user)->create([
         'match_value' => 'RENT',
-        'booked_on' => '2026-03-01',
+        'day_of_month' => 1,
         'set_category' => 'bills',
     ]);
 
@@ -166,33 +166,61 @@ test('an exact date narrows a rule, whatever time of day it was booked', functio
     expect($dayAfter->category)->toBeNull();
 });
 
+/** The whole point of the field: the month and year are not consulted. */
+test('a day of the month matches that day in every month', function () {
+    CategoryRule::factory()->for($this->user)->create([
+        'match_value' => 'RENT',
+        'day_of_month' => 4,
+        'set_category' => 'bills',
+    ]);
+
+    $march = Transaction::factory()->forAccount($this->monzo)->make([
+        'name' => 'RENT', 'booked_at' => '2026-03-04 09:00:00', 'category' => null,
+    ]);
+    $november = Transaction::factory()->forAccount($this->monzo)->make([
+        'name' => 'RENT', 'booked_at' => '2025-11-04 09:00:00', 'category' => null,
+    ]);
+    $fifth = Transaction::factory()->forAccount($this->monzo)->make([
+        'name' => 'RENT', 'booked_at' => '2026-03-05 09:00:00', 'category' => null,
+    ]);
+
+    $rules = app(ApplyCategoryRules::class);
+    $rules->handle($march);
+    $rules->handle($november);
+    $rules->handle($fifth);
+
+    expect($march->category)->toBe('bills');
+    expect($november->category)->toBe('bills');
+    expect($fifth->category)->toBeNull();
+});
+
 /** Both conditions narrow the same rule, so both have to hold. */
-test('the exact amount and date conditions combine', function () {
+test('the exact amount and day of the month conditions combine', function () {
     CategoryRule::factory()->for($this->user)->create([
         'match_value' => 'RENT',
         'amount_minor' => -95000,
-        'booked_on' => '2026-03-01',
+        'day_of_month' => 1,
         'set_category' => 'bills',
     ]);
 
     $both = Transaction::factory()->forAccount($this->monzo)->make([
         'name' => 'RENT', 'amount_minor' => -95000, 'booked_at' => '2026-03-01 09:00:00', 'category' => null,
     ]);
-    $rightDateWrongAmount = Transaction::factory()->forAccount($this->monzo)->make([
+    $rightDayWrongAmount = Transaction::factory()->forAccount($this->monzo)->make([
         'name' => 'RENT', 'amount_minor' => -80000, 'booked_at' => '2026-03-01 09:00:00', 'category' => null,
     ]);
-    $rightAmountWrongDate = Transaction::factory()->forAccount($this->monzo)->make([
-        'name' => 'RENT', 'amount_minor' => -95000, 'booked_at' => '2026-04-01 09:00:00', 'category' => null,
+    $rightAmountWrongDay = Transaction::factory()->forAccount($this->monzo)->make([
+        'name' => 'RENT', 'amount_minor' => -95000, 'booked_at' => '2026-04-02 09:00:00', 'category' => null,
     ]);
 
     $rules = app(ApplyCategoryRules::class);
     $rules->handle($both);
-    $rules->handle($rightDateWrongAmount);
-    $rules->handle($rightAmountWrongDate);
+    $rules->handle($rightDayWrongAmount);
+    $rules->handle($rightAmountWrongDay);
 
     expect($both->category)->toBe('bills');
-    expect($rightDateWrongAmount->category)->toBeNull();
-    expect($rightAmountWrongDate->category)->toBeNull();
+    expect($rightDayWrongAmount->category)->toBeNull();
+    expect($rightAmountWrongDay->category)->toBeNull();
 });
 
 /** Left null they must not narrow anything, or every existing rule breaks. */
@@ -200,7 +228,7 @@ test('a rule with neither condition set still matches on text alone', function (
     CategoryRule::factory()->for($this->user)->create([
         'match_value' => 'RENT',
         'amount_minor' => null,
-        'booked_on' => null,
+        'day_of_month' => null,
         'set_category' => 'bills',
     ]);
 
@@ -220,7 +248,7 @@ test('the exact conditions can be saved from the rules form', function () {
             'match_type' => 'contains',
             'match_value' => 'RENT',
             'amount_minor' => -95000,
-            'booked_on' => '2026-03-01',
+            'day_of_month' => 1,
             'set_category' => 'bills',
         ])
         ->assertSessionHasNoErrors();
@@ -228,7 +256,21 @@ test('the exact conditions can be saved from the rules form', function () {
     $rule = CategoryRule::query()->where('name', 'March rent')->sole();
 
     expect($rule->amount_minor)->toBe(-95000);
-    expect($rule->booked_on->toDateString())->toBe('2026-03-01');
+    expect($rule->day_of_month)->toBe(1);
+});
+
+test('a day of the month outside the calendar is refused', function () {
+    $this->actingAs($this->user)
+        ->from(route('category-rules.index'))
+        ->post(route('category-rules.store'), [
+            'name' => 'Impossible',
+            'match_field' => 'any',
+            'match_type' => 'contains',
+            'match_value' => 'RENT',
+            'day_of_month' => 32,
+            'set_category' => 'bills',
+        ])
+        ->assertSessionHasErrors('day_of_month');
 });
 
 /**
@@ -244,7 +286,7 @@ test('leaving the exact conditions blank stores no condition', function () {
             'match_type' => 'contains',
             'match_value' => 'RENT',
             'amount_minor' => null,
-            'booked_on' => null,
+            'day_of_month' => null,
             'set_category' => 'bills',
         ])
         ->assertSessionHasNoErrors();
@@ -252,7 +294,7 @@ test('leaving the exact conditions blank stores no condition', function () {
     $rule = CategoryRule::query()->where('name', 'Any rent')->sole();
 
     expect($rule->amount_minor)->toBeNull();
-    expect($rule->booked_on)->toBeNull();
+    expect($rule->day_of_month)->toBeNull();
 });
 
 test('amount bounds can be saved from the rules form', function () {
@@ -330,17 +372,56 @@ test('the rules listing carries the exact conditions', function () {
     CategoryRule::factory()->for($this->user)->create([
         'name' => 'March rent',
         'amount_minor' => -95000,
-        'booked_on' => '2026-03-01',
+        'day_of_month' => 1,
     ]);
 
     $this->actingAs($this->user)
         ->get(route('category-rules.index'))
         ->assertInertia(fn ($page) => $page
             ->where('rules.0.amountMinor', -95000)
-            ->where('rules.0.bookedOn', '2026-03-01')
+            ->where('rules.0.dayOfMonth', 1)
             ->has('rules.0.amountMinMinor')
             ->has('rules.0.amountMaxMinor')
         );
+});
+
+/**
+ * The count is what the rule selects, not what it has categorised, so a rule
+ * an earlier stops_processing rule shadows still reports its own matches.
+ */
+test('the rules listing counts the transactions each rule matches', function () {
+    $broad = CategoryRule::factory()->for($this->user)->create([
+        'name' => 'Anything AWS',
+        'match_value' => 'AWS',
+        'priority' => 10,
+        'stops_processing' => true,
+    ]);
+    $shadowed = CategoryRule::factory()->for($this->user)->create([
+        'name' => 'AWS invoices only',
+        'match_value' => 'AWS INVOICE',
+        'priority' => 0,
+    ]);
+    $never = CategoryRule::factory()->for($this->user)->create([
+        'name' => 'Nothing at all',
+        'match_value' => 'NO SUCH MERCHANT',
+        'priority' => -10,
+    ]);
+
+    Transaction::factory()->forAccount($this->monzo)->count(2)->create([
+        'user_id' => $this->user->id, 'name' => 'AWS INVOICE', 'description' => null, 'merchant_name' => null,
+    ]);
+    Transaction::factory()->forAccount($this->monzo)->create([
+        'user_id' => $this->user->id, 'name' => 'AWS EMEA', 'description' => null, 'merchant_name' => null,
+    ]);
+
+    $counts = collect($this->actingAs($this->user)
+        ->get(route('category-rules.index'))
+        ->viewData('page')['props']['rules'])
+        ->pluck('matchCount', 'id');
+
+    expect($counts[$broad->id])->toBe(3)
+        ->and($counts[$shadowed->id])->toBe(2)
+        ->and($counts[$never->id])->toBe(0);
 });
 
 test('match types behave as named', function () {

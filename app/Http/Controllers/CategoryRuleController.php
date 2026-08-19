@@ -9,6 +9,7 @@ use App\Models\Category;
 use App\Models\CategoryRule;
 use App\Models\Transaction;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -21,13 +22,17 @@ class CategoryRuleController extends Controller
         $user = $request->user();
         $labels = Category::labelsFor($user->id);
 
+        /** Inactive rules are listed too, in the order they would run. */
+        $rules = CategoryRule::query()
+            ->where('user_id', $user->id)
+            ->orderByDesc('priority')
+            ->orderBy('id')
+            ->get();
+
+        $matchCounts = $this->matchCounts($user->id, $rules);
+
         return Inertia::render('transactions/rules', [
-            /** Inactive rules are listed too, in the order they would run. */
-            'rules' => CategoryRule::query()
-                ->where('user_id', $user->id)
-                ->orderByDesc('priority')
-                ->orderBy('id')
-                ->get()
+            'rules' => $rules
                 ->map(fn (CategoryRule $rule): array => [
                     'id' => $rule->id,
                     'name' => $rule->name,
@@ -38,7 +43,7 @@ class CategoryRuleController extends Controller
                     'amountMinMinor' => $rule->amount_min_minor,
                     'amountMaxMinor' => $rule->amount_max_minor,
                     'amountMinor' => $rule->amount_minor,
-                    'bookedOn' => $rule->booked_on?->toDateString(),
+                    'dayOfMonth' => $rule->day_of_month,
                     'setCategory' => $rule->set_category,
                     'setCategoryLabel' => $rule->set_category === null
                         ? null
@@ -47,6 +52,7 @@ class CategoryRuleController extends Controller
                     'priority' => $rule->priority,
                     'stopsProcessing' => $rule->stops_processing,
                     'isActive' => $rule->is_active,
+                    'matchCount' => $matchCounts[$rule->id],
                 ])
                 ->all(),
             'accounts' => Account::query()
@@ -136,6 +142,40 @@ class CategoryRuleController extends Controller
         ]);
 
         return back();
+    }
+
+    /**
+     * How many stored transactions each rule's conditions select.
+     *
+     * Counted in PHP rather than SQL because a rule may match by regex, which
+     * SQLite has no operator for. Every rule is run over the same single pass
+     * of rows, so the cost is one query however many rules there are.
+     *
+     * This is what a rule selects, not what it has categorised. A rule sitting
+     * behind an earlier stops_processing rule still counts every row it
+     * matches, which is the number that says whether the rule itself is
+     * written correctly.
+     *
+     * @param  Collection<int, CategoryRule>  $rules
+     * @return array<int, int> Rule id => matching transactions.
+     */
+    private function matchCounts(int $userId, Collection $rules): array
+    {
+        /** @var array<int, int> $counts */
+        $counts = array_fill_keys($rules->modelKeys(), 0);
+
+        Transaction::query()
+            ->where('user_id', $userId)
+            ->select(['id', 'account_id', 'amount_minor', 'booked_at', 'name', 'description', 'merchant_name'])
+            ->each(function (Transaction $transaction) use ($rules, &$counts): void {
+                foreach ($rules as $rule) {
+                    if ($rule->matches($transaction)) {
+                        $counts[$rule->id]++;
+                    }
+                }
+            });
+
+        return $counts;
     }
 
     /**
