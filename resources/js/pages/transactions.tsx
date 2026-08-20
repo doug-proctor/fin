@@ -1,6 +1,7 @@
 import { Form, Head } from '@inertiajs/react';
 import { RefreshCw } from 'lucide-react';
 import { useState } from 'react';
+import { CategoryTargetsDialog } from '@/components/transactions/category-targets-dialog';
 import { ImportAmexDialog } from '@/components/transactions/import-amex-dialog';
 import type { ImportResult } from '@/components/transactions/import-amex-dialog';
 import { MarkMonthProcessedDialog } from '@/components/transactions/mark-month-processed-dialog';
@@ -18,6 +19,7 @@ import { sync as syncMonzo } from '@/routes/monzo';
 import { index as transactionsIndex } from '@/routes/transactions';
 import type {
     CategoryOption,
+    CategoryTargets,
     GroupBy,
     SortKey,
     Totals,
@@ -32,6 +34,8 @@ interface Props {
     month: MonthNav;
     /** Rows in the month on screen not marked off yet, ignoring the filters. */
     unprocessedCount: number;
+    /** What this month is being measured against. */
+    targets: CategoryTargets;
     summary: Totals;
     subtotals: Record<string, Totals>;
     filters: TransactionFilterState;
@@ -48,6 +52,7 @@ export default function TransactionsIndex({
     transactions,
     month,
     unprocessedCount,
+    targets,
     summary,
     subtotals,
     filters,
@@ -107,6 +112,12 @@ export default function TransactionsIndex({
                     />
 
                     <div className="ml-auto flex flex-wrap gap-2">
+                        <CategoryTargetsDialog
+                            monthLabel={month.label}
+                            targets={targets}
+                            categories={options.categories}
+                        />
+
                         <MarkMonthProcessedDialog
                             month={month}
                             unprocessedCount={unprocessedCount}
@@ -121,7 +132,10 @@ export default function TransactionsIndex({
                                     <Button
                                         type="submit"
                                         variant="outline"
-                                        size="sm"
+                                        size="icon"
+                                        className="size-8"
+                                        title="Import Monzo"
+                                        aria-label="Import Monzo"
                                         disabled={processing}
                                     >
                                         {processing ? (
@@ -129,7 +143,6 @@ export default function TransactionsIndex({
                                         ) : (
                                             <RefreshCw className="h-4 w-4" />
                                         )}
-                                        Import Monzo
                                     </Button>
                                 )}
                             </Form>
@@ -139,7 +152,10 @@ export default function TransactionsIndex({
                     </div>
                 </div>
 
-                <TransactionsSummary summary={summary} />
+                <TransactionsSummary
+                    summary={summary}
+                    targetTotal={targets.total}
+                />
 
                 <TransactionsMonthNav
                     month={month}
@@ -156,6 +172,7 @@ export default function TransactionsIndex({
                     <TransactionsTable
                         transactions={transactions}
                         subtotals={subtotals}
+                        targets={targets.saved}
                         groupBy={(filters.group_by ?? 'none') as GroupBy}
                         sort={sort}
                         sortDirection={sortDirection}

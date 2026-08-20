@@ -77,9 +77,14 @@ export function ImportAmexDialog({ result }: Props) {
     return (
         <Dialog open={open} onOpenChange={reset}>
             <DialogTrigger asChild>
-                <Button variant="outline" size="sm">
+                <Button
+                    variant="outline"
+                    size="icon"
+                    className="size-8"
+                    title="Import AMEX"
+                    aria-label="Import AMEX"
+                >
                     <Import className="h-4 w-4" />
-                    Import AMEX
                 </Button>
             </DialogTrigger>
 

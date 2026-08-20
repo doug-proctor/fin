@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CategoryRuleController;
+use App\Http\Controllers\CategoryTargetController;
 use App\Http\Controllers\SyncReportController;
 use App\Http\Controllers\TransactionController;
 use App\Http\Controllers\TransactionImportController;
@@ -13,6 +14,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('categories', [CategoryController::class, 'index'])->name('categories.index');
     Route::post('categories', [CategoryController::class, 'store'])->name('categories.store');
     Route::patch('categories/{category}', [CategoryController::class, 'update'])->name('categories.update');
+
+    Route::post('transactions/targets', [CategoryTargetController::class, 'store'])->name('category-targets.store');
 
     Route::get('transactions/sync-reports', [SyncReportController::class, 'index'])->name('sync-reports.index');
 

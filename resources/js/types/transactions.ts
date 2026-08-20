@@ -62,6 +62,26 @@ export interface CategoryOption {
     label: string;
 }
 
+/**
+ * What the month on screen is being measured against. Every amount is in
+ * minor units and positive, because a target is a magnitude.
+ */
+export interface CategoryTargets {
+    /** The month these belong to, 'YYYY-MM'. */
+    month: string;
+    /** Category value to target. What is saved, and what is displayed. */
+    saved: Record<string, number>;
+    /**
+     * The saved targets added up, skipping categories held out of the totals.
+     * Null when none of the counted categories has one.
+     */
+    total: number | null;
+    /** What the form opens with, which is `saved` unless the month has none. */
+    prefill: Record<string, number>;
+    /** The month prefill came from, and null when these are the month's own. */
+    copiedFrom: string | null;
+}
+
 export interface TransactionFacets {
     categories: string[];
     types: string[];

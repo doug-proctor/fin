@@ -30,16 +30,6 @@ class UpdateTransaction
         if ($attributes !== []) {
             $transaction->fill($attributes);
 
-<<<<<<< Updated upstream
-            /**
-             * Editing the notes rewrites the tags too, unless tags were set in
-             * the same edit, so the "#tag" convention keeps working.
-             */
-            if (array_key_exists('notes', $attributes) && ! array_key_exists('tags', $attributes)) {
-                $transaction->tags = TransactionData::parseTags($transaction->notes);
-                $attributes['tags'] = $transaction->tags;
-            }
-
             /**
              * Only bank-owned fields are recorded. An override exists to stop
              * an import writing over a correction, so a column no import
@@ -51,9 +41,6 @@ class UpdateTransaction
             if ($overridden !== []) {
                 $transaction->markOverridden($overridden);
             }
-=======
-            $transaction->markOverridden(array_keys($attributes));
->>>>>>> Stashed changes
 
             /**
              * A category chosen by hand outranks both the provider's guess and

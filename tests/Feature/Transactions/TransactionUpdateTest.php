@@ -32,8 +32,14 @@ test('editing a field records it as an override', function () {
     expect($transaction->name)->toBe('Weekly shop');
     expect($transaction->category)->toBe('groceries');
     expect($transaction->isOverridden('name'))->toBeTrue();
-    expect($transaction->isOverridden('category'))->toBeTrue();
     expect($transaction->isOverridden('notes'))->toBeFalse();
+
+    /**
+     * The category is not an override. No import writes one, so there is
+     * nothing for the map to protect; categorised_by is what stops a rule
+     * refiling the row.
+     */
+    expect($transaction->isOverridden('category'))->toBeFalse();
     expect($transaction->categorised_by)->toBe('user');
 });
 
@@ -298,7 +304,6 @@ test('the amount can be corrected by hand', function () {
     expect($transaction->isOverridden('amount_minor'))->toBeTrue();
 });
 
-<<<<<<< Updated upstream
 test('an accounting date can be set by hand', function () {
     $transaction = Transaction::factory()->forAccount($this->account)->create([
         'booked_at' => '2026-06-20 19:00:00',
@@ -358,18 +363,24 @@ test('editing a bank field alongside an accounting date records only the bank fi
     expect($transaction->isOverridden('accounting_date'))->toBeFalse();
 });
 
-/** The month arrows stop at the current month, so later is unreachable. */
-test('an accounting date after the current month is rejected', function () {
+/**
+ * A flight booked in July for a holiday in August belongs to August, so an
+ * accounting date is allowed to run ahead of the current month. The forward
+ * month arrow follows it out.
+ */
+test('an accounting date after the current month is allowed', function () {
     $transaction = Transaction::factory()->forAccount($this->account)->create();
+    $future = now()->addMonths(2)->startOfMonth()->addDays(4);
 
     $this->actingAs($this->user)
         ->from(route('transactions.index'))
         ->patch(route('transactions.update', $transaction), [
-            'accounting_date' => now()->addMonths(2)->toDateString(),
+            'accounting_date' => $future->toDateString(),
         ])
-        ->assertSessionHasErrors('accounting_date');
+        ->assertSessionHasNoErrors();
 
-    expect($transaction->fresh()->accounting_date)->toBeNull();
+    expect($transaction->fresh()->accounting_date->toDateString())
+        ->toBe($future->toDateString());
 });
 
 test('a hand set accounting date survives a later sync', function () {
@@ -407,7 +418,8 @@ test('a hand set accounting date survives a later sync', function () {
     app(SyncMonzoConnection::class)->handle($connection, initial: true);
 
     expect($transaction->fresh()->accounting_date->toDateString())->toBe('2026-02-20');
-=======
+});
+
 test('marking a transaction processed is not recorded as an override', function () {
     $transaction = Transaction::factory()->forAccount($this->account)->create();
 
@@ -451,7 +463,6 @@ test('an edit that says nothing about processed leaves it alone', function () {
 
     expect($transaction->name)->toBe('Weekly shop');
     expect($transaction->processed)->toBeTrue();
->>>>>>> Stashed changes
 });
 
 test('an invalid category is rejected', function () {

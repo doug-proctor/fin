@@ -76,16 +76,12 @@ class TransactionUpdateRequest extends FormRequest
         return [
             'booked_at' => ['sometimes', 'date'],
             /**
-             * The month arrows stop at the current month, so a later
-             * accounting date would leave the amount counted in a month the
-             * user cannot reach, with nothing on screen to explain it.
+             * No upper bound: a charge can belong to a month that has not
+             * happened yet, such as a flight booked in July for a holiday in
+             * August. The forward month arrow reaches whichever month is
+             * furthest, so the amount stays visible.
              */
-            'accounting_date' => [
-                'sometimes',
-                'nullable',
-                'date',
-                'before_or_equal:'.now()->endOfMonth()->toDateString(),
-            ],
+            'accounting_date' => ['sometimes', 'nullable', 'date'],
             'name' => ['sometimes', 'nullable', 'string', 'max:255'],
             'description' => ['sometimes', 'nullable', 'string', 'max:2000'],
             'category' => ['sometimes', 'nullable', Rule::exists(Category::class, 'value')

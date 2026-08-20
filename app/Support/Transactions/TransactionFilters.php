@@ -2,6 +2,7 @@
 
 namespace App\Support\Transactions;
 
+use Carbon\CarbonInterface;
 use Illuminate\Support\Carbon;
 use Throwable;
 
@@ -144,12 +145,13 @@ readonly class TransactionFilters
     }
 
     /**
-     * There is nothing after the current month, so the forward arrow stops
-     * there rather than walking into months that cannot hold anything.
+     * The forward arrow, bounded by the last month that can hold anything.
+     * That is usually the current month, but an accounting date set into the
+     * future pushes it out so the amount stays reachable.
      */
-    public function nextMonth(): ?Carbon
+    public function nextMonth(CarbonInterface $lastMonth): ?Carbon
     {
-        return $this->isCurrentMonth()
+        return $this->monthStart()->greaterThanOrEqualTo($lastMonth->copy()->startOfMonth())
             ? null
             : $this->monthStart()->addMonthNoOverflow();
     }

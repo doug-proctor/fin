@@ -4,6 +4,7 @@ namespace App\Support\Transactions;
 
 use App\Models\Category;
 use App\Models\Transaction;
+use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -246,6 +247,41 @@ class TransactionQuery
             ->where('transactions.user_id', $this->userId)
             ->whereBetween('booked_at', [$this->filters->monthStart(), $this->filters->monthEnd()])
             ->where('processed', false);
+    }
+
+    /**
+     * The furthest month the forward arrow may reach: the current one, or a
+     * later one when a charge has been moved into it.
+     *
+     * Read as char(7) rather than as a date because the model cast writes
+     * 'Y-m-d H:i:s' into accounting_date while raw SQL writes a bare 'Y-m-d',
+     * and SQLite compares both as text.
+     */
+    public function lastMonth(): Carbon
+    {
+        $current = Carbon::now()->startOfMonth();
+
+        /**
+         * An aggregate row is not a transaction, so this drops to the base
+         * query rather than hydrating a model out of one column.
+         *
+         * @var object{month: string|null}|null $row
+         */
+        $row = Transaction::query()
+            ->toBase()
+            ->where('user_id', $this->userId)
+            ->selectRaw('MAX(substr(accounting_date, 1, 7)) as month')
+            ->first();
+
+        $furthest = $row?->month;
+
+        if ($furthest === null) {
+            return $current;
+        }
+
+        $month = Carbon::createFromFormat('Y-m', $furthest)->startOfMonth();
+
+        return $month->greaterThan($current) ? $month : $current;
     }
 
     /**

@@ -48,16 +48,20 @@ class Category extends Model
     /**
      * Categories whose money is held out of every total.
      *
-     * A transfer moves money between accounts the user already owns, so it is
-     * not spending or earning. Counting one would add the same figure to
-     * money in and to money out and make a month read as busier than it was.
-     * Rows in these categories still appear in the list and still count
-     * towards the number of transactions; only their value is excluded.
+     * 'ignore' is where a transfer between accounts the user already owns is
+     * filed, along with anything else that is not spending or earning.
+     * Counting a transfer would add the same figure to money in and to money
+     * out and make a month read as busier than it was. Rows in these
+     * categories still appear in the list and still count towards the number
+     * of transactions; only their value is excluded.
+     *
+     * This list held 'transfers' until that category was renamed to 'ignore'
+     * on 2026-08-20; the rows were moved in the same change.
      *
      * @var array<int, string>
      */
     public const EXCLUDED_FROM_TOTALS = [
-        'transfers',
+        'ignore',
     ];
 
     /**
@@ -70,7 +74,7 @@ class Category extends Model
     public const DEFAULTS = [
         'bills' => 'Bills',
         'dating' => 'Dating',
-        'eating_out' => 'Eating out',
+        'gifts' => 'Gifts',
         'groceries' => 'Groceries',
         'holiday' => 'Holidays',
         'james' => 'James',
@@ -78,7 +82,7 @@ class Category extends Model
         'personal_care' => 'Personal care',
         'social' => 'Social',
         'subscriptions' => 'Subscriptions',
-        'transfers' => 'Transfers',
+        'ignore' => 'Ignore',
         'transport' => 'Transport',
         'trips' => 'Trips',
     ];

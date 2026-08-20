@@ -24,6 +24,11 @@ import type {
 interface Props {
     transactions: TransactionRow[];
     subtotals: Record<string, Totals>;
+    /**
+     * Category value to the target set for the month, in minor units. Shown
+     * against a group's spending when the table is grouped by category.
+     */
+    targets: Record<string, number>;
     groupBy: GroupBy;
     sort: SortKey;
     sortDirection: SortDirection;
@@ -67,7 +72,6 @@ const COLUMNS_BEFORE_MONEY = MONEY_COLUMN;
 const COLUMNS_AFTER_MONEY = COLUMNS.length - MONEY_COLUMN - 1;
 
 /**
-<<<<<<< Updated upstream
  * A row that counts towards a different month is marked in the month it
  * counts in, so it can be told apart from the ones that were actually booked
  * there. In the month it was booked it is greyed out instead.
@@ -92,12 +96,8 @@ function accountingMonthLabel(accountingDate: string): string {
 }
 
 /**
- * A value the user has corrected by hand is marked, because a sync will now
- * leave it alone and that is worth being able to see at a glance.
-=======
  * A value the user has corrected by hand carries a tooltip, because a sync
  * will now leave it alone and that is worth being able to check.
->>>>>>> Stashed changes
  */
 function CellText({
     value,
@@ -134,6 +134,7 @@ function CellText({
 export function TransactionsTable({
     transactions,
     subtotals,
+    targets,
     groupBy,
     sort,
     sortDirection,
@@ -268,7 +269,19 @@ export function TransactionsTable({
                         const key = transaction.groupKey;
                         const subtotal = key ? subtotals[key] : undefined;
 
-<<<<<<< Updated upstream
+                        /**
+                         * A target belongs to a category, so it only has
+                         * anything to say when the table is grouped that way.
+                         * A category held out of the totals always spends
+                         * nothing, so its target would read 0 of X forever.
+                         */
+                        const target =
+                            groupBy === 'category' &&
+                            key !== null &&
+                            !transaction.excludedFromTotals
+                                ? targets[key]
+                                : undefined;
+
                         return (
                             <Fragment key={transaction.id}>
                                 {startsGroup && key !== null && (
@@ -285,104 +298,9 @@ export function TransactionsTable({
                                                         ? 'transaction'
                                                         : 'transactions'}
                                                 </span>
-=======
-                    return (
-                        <Fragment key={transaction.id}>
-                            {startsGroup && key !== null && (
-                                <TableRow className="bg-muted/50 hover:bg-muted/50">
-                                    <TableCell
-                                        colSpan={COLUMNS_BEFORE_MONEY}
-                                        className="font-medium"
-                                    >
-                                        {groupLabel(key)}
-                                        {subtotal && (
-                                            <span className="ml-2 font-normal text-muted-foreground">
-                                                {subtotal.count.toLocaleString()}{' '}
-                                                {subtotal.count === 1
-                                                    ? 'transaction'
-                                                    : 'transactions'}
-                                            </span>
-                                        )}
-                                    </TableCell>
-
-                                    <TableCell
-                                        className={cn(
-                                            'text-right font-medium tabular-nums',
-                                            subtotal &&
-                                                subtotal.net < 0 &&
-                                                'text-rose-600 dark:text-rose-400',
-                                            subtotal &&
-                                                subtotal.net > 0 &&
-                                                'text-emerald-600 dark:text-emerald-400',
-                                        )}
-                                    >
-                                        {subtotal
-                                            ? formatMoney(subtotal.net, 'GBP', {
-                                                  signed: true,
-                                              })
-                                            : null}
-                                    </TableCell>
-
-                                    {Array.from({
-                                        length: COLUMNS_AFTER_MONEY,
-                                    }).map((_, index) => (
-                                        <TableCell key={index} />
-                                    ))}
-                                </TableRow>
-                            )}
-
-                            {/*
-                             * The whole row opens the edit dialog, but a click
-                             * handler on a <tr> is invisible to a keyboard, and
-                             * giving the row a button role would cost the table
-                             * its semantics. So the mouse gets the row and the
-                             * keyboard gets the real button in the name cell.
-                             */}
-                            <TableRow
-                                onClick={() => onEdit(transaction)}
-                                className="cursor-pointer"
-                            >
-                                <TableCell className="pr-4">
-                                    {!transaction.processed && (
-                                        <span
-                                            title="Not processed yet"
-                                            className="block size-2 rounded-full bg-blue-500 dark:bg-blue-400"
-                                        />
-                                    )}
-                                </TableCell>
-
-                                <TableCell>
-                                    <AccountProviderIcon
-                                        provider={transaction.accountProvider}
-                                        accountName={transaction.accountName}
-                                    />
-                                </TableCell>
-
-                                <TableCell className="whitespace-nowrap text-muted-foreground">
-                                    <CellText
-                                        value={formatDate(transaction.bookedAt)}
-                                        isOverridden={transaction.overriddenFields.includes(
-                                            'booked_at',
-                                        )}
-                                    />
-                                </TableCell>
-
-                                <TableCell className="max-w-[16rem]">
-                                    <button
-                                        type="button"
-                                        onClick={() => onEdit(transaction)}
-                                        aria-label={`Edit ${transaction.name ?? 'transaction'}`}
-                                        className="w-full rounded text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-                                    >
-                                        <CellText
-                                            value={transaction.name}
-                                            isOverridden={transaction.overriddenFields.includes(
-                                                'name',
->>>>>>> Stashed changes
                                             )}
                                         </TableCell>
 
-<<<<<<< Updated upstream
                                         <TableCell
                                             className={cn(
                                                 'text-right font-medium tabular-nums',
@@ -403,6 +321,24 @@ export function TransactionsTable({
                                                       },
                                                   )
                                                 : null}
+
+                                            {target !== undefined &&
+                                                subtotal && (
+                                                    <span
+                                                        className={cn(
+                                                            'block text-xs font-normal',
+                                                            subtotal.moneyOut >
+                                                                target
+                                                                ? 'text-rose-600 dark:text-rose-400'
+                                                                : 'text-muted-foreground',
+                                                        )}
+                                                    >
+                                                        {formatMoney(
+                                                            subtotal.moneyOut,
+                                                        )}{' '}
+                                                        / {formatMoney(target)}
+                                                    </span>
+                                                )}
                                         </TableCell>
 
                                         {Array.from({
@@ -412,27 +348,6 @@ export function TransactionsTable({
                                         ))}
                                     </TableRow>
                                 )}
-=======
-                                <TableCell className="max-w-[10rem]">
-                                    <span
-                                        className="block truncate"
-                                        title={
-                                            transaction.categorisedBy === 'rule'
-                                                ? 'Set by one of your category rules'
-                                                : transaction.categorisedBy ===
-                                                    'user'
-                                                  ? 'Set by you \u2014 syncs will not change it'
-                                                  : undefined
-                                        }
-                                    >
-                                        {transaction.categoryLabel ?? (
-                                            <span className="text-muted-foreground">
-                                                Uncategorised
-                                            </span>
-                                        )}
-                                    </span>
-                                </TableCell>
->>>>>>> Stashed changes
 
                                 {/*
                                  * The whole row opens the edit dialog, but a click
@@ -455,6 +370,15 @@ export function TransactionsTable({
                                             'opacity-50',
                                     )}
                                 >
+                                    <TableCell className="pr-4">
+                                        {!transaction.processed && (
+                                            <span
+                                                title="Not processed yet"
+                                                className="block size-2 rounded-full bg-blue-500 dark:bg-blue-400"
+                                            />
+                                        )}
+                                    </TableCell>
+
                                     <TableCell>
                                         <AccountProviderIcon
                                             provider={
@@ -492,16 +416,6 @@ export function TransactionsTable({
                                                 className="truncate font-medium"
                                             />
                                         </button>
-                                    </TableCell>
-
-                                    <TableCell className="max-w-[18rem]">
-                                        <CellText
-                                            value={transaction.description}
-                                            isOverridden={transaction.overriddenFields.includes(
-                                                'description',
-                                            )}
-                                            className="truncate text-muted-foreground"
-                                        />
                                     </TableCell>
 
                                     <TableCell className="max-w-[10rem]">
@@ -556,7 +470,6 @@ export function TransactionsTable({
                                         )}
                                     </TableCell>
 
-<<<<<<< Updated upstream
                                     <TableCell className="max-w-[16rem]">
                                         <CellText
                                             value={transaction.notes}
@@ -567,11 +480,6 @@ export function TransactionsTable({
                                         />
                                     </TableCell>
 
-                                    {/*
-                                     * Tags follow the note rather than standing on
-                                     * their own: they are the "#tag" words inside
-                                     * it, rewritten whenever it is edited.
-                                     */}
                                     <TableCell className="max-w-[12rem]">
                                         {transaction.tags.length > 0 && (
                                             <div className="flex flex-wrap gap-1">
@@ -592,27 +500,6 @@ export function TransactionsTable({
                         );
                     },
                 )}
-=======
-                                <TableCell className="max-w-[12rem]">
-                                    {transaction.tags.length > 0 && (
-                                        <div className="flex flex-wrap gap-1">
-                                            {transaction.tags.map((tag) => (
-                                                <Badge
-                                                    key={tag}
-                                                    variant="outline"
-                                                    className="px-1 py-0 text-sm"
-                                                >
-                                                    #{tag}
-                                                </Badge>
-                                            ))}
-                                        </div>
-                                    )}
-                                </TableCell>
-                            </TableRow>
-                        </Fragment>
-                    );
-                })}
->>>>>>> Stashed changes
             </TableBody>
         </Table>
     );

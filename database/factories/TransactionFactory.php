@@ -64,13 +64,13 @@ class TransactionFactory extends Factory
     }
 
     /**
-     * A transfer between the user's own accounts, whose value every total
-     * leaves out.
+     * A transfer between the user's own accounts. Filed under 'ignore', which
+     * is the category every total leaves the value out of.
      */
     public function transfer(): static
     {
         return $this->state(fn (array $attributes): array => [
-            'category' => 'transfers',
+            'category' => 'ignore',
             'type' => 'faster_payment',
             'name' => 'Transfer',
         ]);

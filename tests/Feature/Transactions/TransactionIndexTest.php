@@ -62,7 +62,7 @@ test('a transfer keeps its place in the count but adds nothing to the money tota
     expect($summary['net'])->toBe(4000);
 });
 
-test('a month of nothing but transfers totals to zero', function () {
+test('a month of nothing but ignored rows totals to zero', function () {
     Transaction::factory()->forAccount($this->monzo)->transfer()->count(3)->create(['amount_minor' => -7500]);
 
     $summary = query($this->user)->summary();
@@ -81,7 +81,7 @@ test('a row says whether the totals leave it out', function () {
 
     $excluded = collect($rows)->keyBy('category')->map(fn (array $row): bool => $row['excludedFromTotals']);
 
-    expect($excluded['transfers'])->toBeTrue();
+    expect($excluded['ignore'])->toBeTrue();
     expect($excluded['groceries'])->toBeFalse();
     expect($excluded[''])->toBeFalse();
 });
@@ -272,19 +272,24 @@ test('an unreadable month falls back to the current one rather than showing noth
     }
 });
 
-test('the arrows step one month at a time and stop at the current month', function () {
+test('the arrows step one month at a time and stop at the last month', function () {
+    $thisMonth = now()->startOfMonth();
     $current = TransactionFilters::fromArray([]);
 
     expect($current->isCurrentMonth())->toBeTrue();
-    /** Nothing exists after this month, so the forward arrow is disabled. */
-    expect($current->nextMonth())->toBeNull();
+    /** Nothing counts after this month, so the forward arrow is disabled. */
+    expect($current->nextMonth($thisMonth))->toBeNull();
     expect($current->previousMonth()->format('Y-m'))
         ->toBe(now()->subMonthNoOverflow()->format('Y-m'));
+
+    /** A charge moved into a later month pushes the bound out. */
+    expect($current->nextMonth($thisMonth->copy()->addMonthNoOverflow())->format('Y-m'))
+        ->toBe(now()->addMonthNoOverflow()->format('Y-m'));
 
     $past = TransactionFilters::fromArray(['month' => '2026-03']);
 
     expect($past->isCurrentMonth())->toBeFalse();
-    expect($past->nextMonth()->format('Y-m'))->toBe('2026-04');
+    expect($past->nextMonth($thisMonth)->format('Y-m'))->toBe('2026-04');
     expect($past->previousMonth()->format('Y-m'))->toBe('2026-02');
 });
 
@@ -318,6 +323,40 @@ test('the page sends the month label and the arrows', function () {
         ->assertInertia(fn ($page) => $page
             ->where('month.label', now()->format('F Y'))
             ->where('month.next', null));
+});
+
+/**
+ * A flight booked in July counting towards August has to be reachable, so the
+ * forward arrow walks past the current month as far as that accounting date
+ * and no further.
+ */
+test('the forward arrow reaches a month a charge was moved into', function () {
+    Transaction::factory()->forAccount($this->monzo)->create([
+        'booked_at' => now()->toDateTimeString(),
+        'accounting_date' => now()->addMonths(2)->startOfMonth()->addDays(4)->toDateString(),
+    ]);
+
+    $this->actingAs($this->user)
+        ->get(route('transactions.index'))
+        ->assertInertia(fn ($page) => $page
+            ->where('month.next', now()->addMonthNoOverflow()->format('Y-m')));
+
+    $this->actingAs($this->user)
+        ->get(route('transactions.index', ['month' => now()->addMonths(2)->format('Y-m')]))
+        ->assertInertia(fn ($page) => $page->where('month.next', null));
+});
+
+test('another user accounting date does not move the forward arrow', function () {
+    $other = User::factory()->create();
+    $otherAccount = Account::factory()->monzo()->for($other)->create();
+
+    Transaction::factory()->forAccount($otherAccount)->create([
+        'accounting_date' => now()->addMonths(2)->startOfMonth()->addDays(4)->toDateString(),
+    ]);
+
+    $this->actingAs($this->user)
+        ->get(route('transactions.index'))
+        ->assertInertia(fn ($page) => $page->where('month.next', null));
 });
 
 test('filters survive a round trip through the query string', function () {

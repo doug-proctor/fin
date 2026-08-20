@@ -6,6 +6,7 @@ use App\Actions\Transactions\UpdateTransaction;
 use App\Http\Requests\Transactions\TransactionUpdateRequest;
 use App\Models\Account;
 use App\Models\Category;
+use App\Models\CategoryTarget;
 use App\Models\Transaction;
 use App\Support\Transactions\TransactionFilters;
 use App\Support\Transactions\TransactionPresenter;
@@ -25,6 +26,10 @@ class TransactionController extends Controller
 
         $present = new TransactionPresenter($query, Category::labelsFor($user->id));
 
+        $month = $filters->monthStart()->format('Y-m');
+        $saved = CategoryTarget::forMonth($user->id, $month);
+        $prefill = CategoryTarget::prefillFor($user->id, $month);
+
         return Inertia::render('transactions', [
             'transactions' => $query->rows()->map($present)->all(),
             /**
@@ -35,7 +40,7 @@ class TransactionController extends Controller
                 'label' => $filters->monthStart()->format('F Y'),
                 'current' => $filters->monthStart()->format('Y-m'),
                 'previous' => $filters->previousMonth()->format('Y-m'),
-                'next' => $filters->nextMonth()?->format('Y-m'),
+                'next' => $filters->nextMonth($query->lastMonth())?->format('Y-m'),
             ],
             /**
              * Rows in this month still to be marked off, counted over the
@@ -65,6 +70,24 @@ class TransactionController extends Controller
              * dialog that started it can report how it went.
              */
             'importResult' => $request->session()->get('importResult'),
+            /**
+             * What the month is being measured against. `saved` drives the
+             * summary tile and the category subtotals; `prefill` is what the
+             * form opens with, which differs only when this month has none of
+             * its own and an earlier month's are being suggested.
+             *
+             * Both maps are cast to objects for the same reason `filters` is:
+             * an empty PHP array encodes as a JSON array, so a month with no
+             * targets would reach the browser as [] and reading a category off
+             * it would find an Array method instead of undefined.
+             */
+            'targets' => [
+                'month' => $month,
+                'saved' => (object) $saved,
+                'total' => CategoryTarget::totalOf($saved),
+                'prefill' => (object) $prefill['values'],
+                'copiedFrom' => $prefill['copiedFrom'],
+            ],
             'options' => [
                 'categories' => $this->categoryOptions($request->user()->id),
             ],

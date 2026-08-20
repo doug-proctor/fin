@@ -52,11 +52,13 @@ export function MarkMonthProcessedDialog({ month, unprocessedCount }: Props) {
             <DialogTrigger asChild>
                 <Button
                     variant="outline"
-                    size="sm"
+                    size="icon"
+                    className="size-8"
+                    title="Mark all as processed"
+                    aria-label="Mark all as processed"
                     disabled={unprocessedCount === 0}
                 >
                     <CheckCheck className="h-4 w-4" />
-                    Mark all as processed
                 </Button>
             </DialogTrigger>
 

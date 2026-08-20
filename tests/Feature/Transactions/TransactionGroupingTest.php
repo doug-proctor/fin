@@ -57,7 +57,7 @@ test('a transfer adds nothing to its group subtotal, so the subtotals still add 
     expect($subtotals['2026-03-05'])->toBe(['count' => 2, 'moneyIn' => 0, 'moneyOut' => 1500, 'net' => -1500]);
 });
 
-test('grouping by category gives the transfers group a count but no money', function () {
+test('grouping by category gives the ignore group a count but no money', function () {
     Transaction::factory()->forAccount($this->monzo)->transfer()->count(2)->create([
         'amount_minor' => -6000,
     ]);
@@ -67,7 +67,7 @@ test('grouping by category gives the transfers group a count but no money', func
 
     $subtotals = query($this->user, ['group_by' => 'category'])->groupSubtotals();
 
-    expect($subtotals['transfers'])->toBe(['count' => 2, 'moneyIn' => 0, 'moneyOut' => 0, 'net' => 0]);
+    expect($subtotals['ignore'])->toBe(['count' => 2, 'moneyIn' => 0, 'moneyOut' => 0, 'net' => 0]);
     expect($subtotals['personal_care']['moneyOut'])->toBe(8000);
 });
 

@@ -48,12 +48,9 @@ interface EditForm {
     description: string;
     category: string;
     notes: string;
-<<<<<<< Updated upstream
     accounting_date: string;
-=======
     tags: string[];
     processed: boolean;
->>>>>>> Stashed changes
 }
 
 /** Fields that are sent as typed, and blank back to null. */
@@ -109,12 +106,9 @@ function EditTransactionForm({
         description: transaction.description ?? '',
         category: transaction.category ?? NO_CATEGORY,
         notes: transaction.notes ?? '',
-<<<<<<< Updated upstream
         accounting_date: transaction.accountingDate ?? '',
-=======
         tags: transaction.tags,
         processed: transaction.processed,
->>>>>>> Stashed changes
     };
 
     const form = useForm<EditForm>(initial);
@@ -288,7 +282,6 @@ function EditTransactionForm({
                     <InputError message={errors.notes} />
                 </div>
 
-<<<<<<< Updated upstream
                 {/*
                  * For a charge that landed in the wrong month: a meal eaten in
                  * May and settled up with a friend in June. The booked date
@@ -310,7 +303,6 @@ function EditTransactionForm({
                     </p>
                     <InputError message={errors.accounting_date} />
                 </div>
-=======
                 <label className="flex items-center gap-2 text-sm">
                     <Checkbox
                         checked={data.processed}
@@ -320,7 +312,6 @@ function EditTransactionForm({
                     />
                     Processed
                 </label>
->>>>>>> Stashed changes
             </div>
 
             <DialogFooter className="mt-6 gap-2">

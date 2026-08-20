@@ -221,3 +221,26 @@ test('another user cannot see a row that travelled into their month', function (
 
     expect(query($other, ['month' => '2026-05'])->rows())->toBeEmpty();
 });
+
+/**
+ * A flight booked in July for a holiday in August: the accounting date runs
+ * ahead of the current month. The two-month split works the same way forwards
+ * as it does backwards.
+ */
+test('a row can travel into a month that has not happened yet', function () {
+    $future = now()->addMonths(2)->startOfMonth()->addDays(4);
+
+    travelled($this->account, now()->toDateTimeString(), $future->toDateString(), -18000);
+
+    $booked = query($this->user, ['month' => now()->format('Y-m')]);
+
+    expect($booked->rows()->count())->toBe(1);
+    expect($booked->summary())->toBe(['count' => 0, 'moneyIn' => 0, 'moneyOut' => 0, 'net' => 0]);
+    expect($booked->monthRoleFor($booked->rows()->first()))->toBe('ghost');
+
+    $holiday = query($this->user, ['month' => $future->format('Y-m')]);
+
+    expect($holiday->rows()->count())->toBe(1);
+    expect($holiday->summary())->toBe(['count' => 1, 'moneyIn' => 0, 'moneyOut' => 18000, 'net' => -18000]);
+    expect($holiday->monthRoleFor($holiday->rows()->first()))->toBe('arrival');
+});

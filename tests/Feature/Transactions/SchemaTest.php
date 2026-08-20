@@ -4,6 +4,7 @@ use App\Models\Account;
 use App\Models\AmexSyncReport;
 use App\Models\BankConnection;
 use App\Models\CategoryRule;
+use App\Models\CategoryTarget;
 use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -96,6 +97,7 @@ test('deleting a user cascades to their financial data', function () {
     $account = Account::factory()->monzo()->for($user)->create();
     Transaction::factory()->forAccount($account)->create();
     CategoryRule::factory()->for($user)->create();
+    CategoryTarget::factory()->for($user)->create();
     AmexSyncReport::factory()->for($user)->create();
 
     $user->delete();
@@ -103,5 +105,17 @@ test('deleting a user cascades to their financial data', function () {
     expect(Account::count())->toBe(0);
     expect(Transaction::count())->toBe(0);
     expect(CategoryRule::count())->toBe(0);
+    expect(CategoryTarget::count())->toBe(0);
     expect(AmexSyncReport::count())->toBe(0);
+});
+
+/** One number per category per month is the whole shape of a target. */
+test('one target per category per month', function () {
+    $target = CategoryTarget::factory()->create(['category' => 'groceries', 'month' => '2026-08']);
+
+    expect(fn () => CategoryTarget::factory()->create([
+        'user_id' => $target->user_id,
+        'category' => 'groceries',
+        'month' => '2026-08',
+    ]))->toThrow(UniqueConstraintViolationException::class);
 });
