@@ -8,6 +8,7 @@ import {
     DialogFooter,
     DialogTitle,
 } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
     Select,
@@ -43,10 +44,11 @@ interface EditForm {
     description: string;
     category: string;
     notes: string;
+    accounting_date: string;
 }
 
-/** Text fields that are sent as-is, and blank back to null. */
-const TEXT_FIELDS = ['description', 'notes'] as const;
+/** Fields that are sent as typed, and blank back to null. */
+const NULLABLE_FIELDS = ['description', 'notes', 'accounting_date'] as const;
 
 export function TransactionEditDialog({
     transaction,
@@ -94,6 +96,7 @@ function EditTransactionForm({
         description: transaction.description ?? '',
         category: transaction.category ?? NO_CATEGORY,
         notes: transaction.notes ?? '',
+        accounting_date: transaction.accountingDate ?? '',
     };
 
     const form = useForm<EditForm>(initial);
@@ -107,7 +110,7 @@ function EditTransactionForm({
     function changedFields(): Record<string, unknown> {
         const changed: Record<string, unknown> = {};
 
-        for (const field of TEXT_FIELDS) {
+        for (const field of NULLABLE_FIELDS) {
             if (data[field] !== initial[field]) {
                 changed[field] = data[field].trim() === '' ? null : data[field];
             }
@@ -239,6 +242,28 @@ function EditTransactionForm({
                         Words starting with # become tags.
                     </p>
                     <InputError message={errors.notes} />
+                </div>
+
+                {/*
+                 * For a charge that landed in the wrong month: a meal eaten in
+                 * May and settled up with a friend in June. The booked date
+                 * stays as the bank recorded it; only the month the amount is
+                 * counted in moves.
+                 */}
+                <div className="space-y-2">
+                    <Label htmlFor="accounting-date">Counts towards</Label>
+                    <Input
+                        id="accounting-date"
+                        type="date"
+                        value={data.accounting_date}
+                        onChange={(event) =>
+                            setData('accounting_date', event.target.value)
+                        }
+                    />
+                    <p className="text-xs text-muted-foreground">
+                        Leave blank to count this in the month it was booked.
+                    </p>
+                    <InputError message={errors.accounting_date} />
                 </div>
             </div>
 

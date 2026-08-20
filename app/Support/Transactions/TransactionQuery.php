@@ -4,9 +4,9 @@ namespace App\Support\Transactions;
 
 use App\Models\Category;
 use App\Models\Transaction;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
-use Illuminate\Support\Facades\DB;
 
 /**
  * Turns the transactions screen's controls into SQL.
@@ -36,13 +36,30 @@ class TransactionQuery
         $query = $this->base()->with('account:id,name,provider');
 
         if ($this->filters->isGrouped()) {
-            $query->orderBy(DB::raw($this->groupExpression()), $this->groupDirection());
+            $query->orderByRaw(
+                $this->groupExpression().$this->rawDirection($this->groupDirection()),
+                $this->groupExpressionBindings(),
+            );
         }
 
-        $column = TransactionFilters::SORTS[$this->filters->sort];
+        /**
+         * The date sort reads the date the row is shown for, so a row that
+         * travelled into this month sits where its accounting date puts it
+         * rather than at whichever end of the month it was booked in.
+         */
+        if ($this->filters->sort === 'date') {
+            $query->orderByRaw(
+                $this->displayDateExpression().$this->rawDirection($this->filters->sortDirection),
+                $this->displayDateBindings(),
+            );
+        } else {
+            $query->orderBy(
+                TransactionFilters::SORTS[$this->filters->sort],
+                $this->filters->sortDirection,
+            );
+        }
 
         return $query
-            ->orderBy($column, $this->filters->sortDirection)
             /** A tiebreak keeps the order stable when a sort column ties. */
             ->orderBy('id', 'desc')
             ->get();
@@ -63,9 +80,9 @@ class TransactionQuery
          */
         $row = $this->base()
             ->toBase()
-            ->selectRaw('COUNT(*) as aggregate_count')
-            ->selectRaw($this->moneyInExpression().' as money_in')
-            ->selectRaw($this->moneyOutExpression().' as money_out')
+            ->selectRaw($this->countExpression().' as aggregate_count', $this->countBindings())
+            ->selectRaw($this->moneyInExpression().' as money_in', $this->moneyBindings())
+            ->selectRaw($this->moneyOutExpression().' as money_out', $this->moneyBindings())
             ->reorder()
             ->first();
 
@@ -95,14 +112,15 @@ class TransactionQuery
         }
 
         $expression = $this->groupExpression();
+        $groupBindings = $this->groupExpressionBindings();
 
         return $this->base()
             ->toBase()
-            ->selectRaw($expression.' as group_key')
-            ->selectRaw('COUNT(*) as aggregate_count')
-            ->selectRaw($this->moneyInExpression().' as money_in')
-            ->selectRaw($this->moneyOutExpression().' as money_out')
-            ->groupBy(DB::raw($expression))
+            ->selectRaw($expression.' as group_key', $groupBindings)
+            ->selectRaw($this->countExpression().' as aggregate_count', $this->countBindings())
+            ->selectRaw($this->moneyInExpression().' as money_in', $this->moneyBindings())
+            ->selectRaw($this->moneyOutExpression().' as money_out', $this->moneyBindings())
+            ->groupByRaw($expression, $groupBindings)
             ->reorder()
             ->get()
             ->mapWithKeys(function (object $row): array {
@@ -125,14 +143,58 @@ class TransactionQuery
      */
     public function groupKeyFor(Transaction $transaction): ?string
     {
+        $date = $this->displayDateFor($transaction);
+
         return match ($this->filters->groupBy) {
-            'day' => $transaction->booked_at->toDateString(),
-            'week' => $transaction->booked_at->format('o-\WW'),
-            'month' => $transaction->booked_at->format('Y-m'),
+            'day' => $date->toDateString(),
+            'week' => $date->format('o-\WW'),
+            'month' => $date->format('Y-m'),
             'category' => $transaction->category ?? '',
             'account' => (string) $transaction->account_id,
             'merchant' => $transaction->merchant_name ?? $transaction->name ?? '',
             default => null,
+        };
+    }
+
+    /**
+     * The date a row is shown for in the month being shown: its booked date
+     * when that falls in this month, otherwise its accounting date. The same
+     * row therefore reads as one date in the month it landed in and another
+     * in the month it counts towards.
+     *
+     * Mirrors displayDateExpression(); TransactionGroupingTest asserts that
+     * the two agree.
+     */
+    public function displayDateFor(Transaction $transaction): CarbonInterface
+    {
+        return $transaction->booked_at->isSameMonth($this->filters->monthStart())
+            ? $transaction->booked_at
+            : ($transaction->accounting_date ?? $transaction->booked_at);
+    }
+
+    /**
+     * Whether a row is only visiting the month being shown. A ghost was booked
+     * here but counts towards another month, so it reads greyed out and adds
+     * nothing to the figures; an arrival counts here but was booked elsewhere.
+     * Null covers an ordinary row and one moved within its own month, neither
+     * of which has anything to explain.
+     *
+     * @return 'ghost'|'arrival'|null
+     */
+    public function monthRoleFor(Transaction $transaction): ?string
+    {
+        if ($transaction->accounting_date === null) {
+            return null;
+        }
+
+        $month = $this->filters->monthStart();
+        $bookedHere = $transaction->booked_at->isSameMonth($month);
+        $countsHere = $transaction->accounting_date->isSameMonth($month);
+
+        return match (true) {
+            $bookedHere && $countsHere => null,
+            $countsHere => 'arrival',
+            default => 'ghost',
         };
     }
 
@@ -194,10 +256,27 @@ class TransactionQuery
 
         return Transaction::query()
             ->where('transactions.user_id', $this->userId)
-            /** One month per page, so the month is always part of the query. */
-            ->whereBetween('booked_at', [$filters->monthStart(), $filters->monthEnd()])
-            ->when($filters->dateFrom, fn (Builder $q, $from) => $q->where('booked_at', '>=', $from))
-            ->when($filters->dateTo, fn (Builder $q, $to) => $q->where('booked_at', '<=', $to))
+            /**
+             * One month per page, so the month is always part of the query. A
+             * row is on this page if it was booked here or counts here, which
+             * is what puts a row with an accounting date in both months. The
+             * closure groups the alternative; without it the OR would leak
+             * across every filter clause below.
+             */
+            ->where(fn (Builder $q): Builder => $q
+                ->whereBetween('booked_at', [$filters->monthStart(), $filters->monthEnd()])
+                ->orWhere(fn (Builder $inner): Builder => $inner
+                    ->where('accounting_date', '>=', $filters->monthStart()->toDateString())
+                    ->where('accounting_date', '<', $filters->monthAfter()->toDateString())))
+            /** Narrowing the dates on screen reads the dates on screen. */
+            ->when($filters->dateFrom, fn (Builder $q, $from) => $q->whereRaw(
+                $this->displayDateExpression().' >= ?',
+                [...$this->displayDateBindings(), $from],
+            ))
+            ->when($filters->dateTo, fn (Builder $q, $to) => $q->whereRaw(
+                $this->displayDateExpression().' <= ?',
+                [...$this->displayDateBindings(), $to],
+            ))
             ->when($filters->accountIds, fn (Builder $q, array $ids) => $q->whereIn('account_id', $ids))
             ->when($filters->categories, fn (Builder $q, array $categories) => $q->whereIn('category', $categories))
             ->when($filters->types, fn (Builder $q, array $types) => $q->whereIn('type', $types))
@@ -243,14 +322,139 @@ class TransactionQuery
      * out or net wherever the figures are added up. See
      * Category::EXCLUDED_FROM_TOTALS for why.
      *
-     * The rows themselves are untouched: they stay in the list, keep their own
-     * amount and still count towards the number of transactions.
+     * An excluded row is otherwise untouched: it stays in the list, keeps its
+     * own amount and still counts towards the number of transactions. A row
+     * counting towards another month is dropped from the count as well, by
+     * countExpression().
      *
      * @return literal-string
      */
     private function countableAmountExpression(): string
     {
-        return 'CASE WHEN '.$this->excludedFromTotalsCondition().' THEN 0 ELSE amount_minor END';
+        return 'CASE WHEN '.$this->excludedFromTotalsCondition()
+            .' OR NOT '.$this->countsTowardsMonthCondition()
+            .' THEN 0 ELSE amount_minor END';
+    }
+
+    /**
+     * Whether a row's money and count belong to the month being shown. base()
+     * has already narrowed to the rows this month can show, so a null
+     * accounting date can only mean "booked here", and a date that is set
+     * only counts if it lands here.
+     *
+     * The range is half open and compared against bare dates on purpose. The
+     * date cast writes 'Y-m-d H:i:s' into this column while raw SQL can leave
+     * a bare 'Y-m-d', and SQLite compares both as text: a closed range with
+     * date bounds drops a timestamped last day of the month, and one with
+     * datetime bounds drops a bare first day. The IS NULL arm also keeps the
+     * condition from ever being NULL, so NOT can be taken of it safely.
+     *
+     * @return literal-string
+     */
+    private function countsTowardsMonthCondition(): string
+    {
+        return '(accounting_date IS NULL OR (accounting_date >= ? AND accounting_date < ?))';
+    }
+
+    /**
+     * The month bounds countsTowardsMonthCondition() reads, in placeholder
+     * order. Every raw clause built on that condition passes these, repeated
+     * once per appearance of it.
+     *
+     * @return array<int, string>
+     */
+    private function countsTowardsMonthBindings(): array
+    {
+        return [
+            $this->filters->monthStart()->toDateString(),
+            $this->filters->monthAfter()->toDateString(),
+        ];
+    }
+
+    /**
+     * The date a row is shown for, as SQL. Mirrored in PHP by displayDateFor().
+     *
+     * datetime() normalises the accounting date to the shape booked_at is
+     * stored in, so ordering never depends on which of the two formats
+     * happens to be in the column.
+     *
+     * @return literal-string
+     */
+    private function displayDateExpression(): string
+    {
+        return 'CASE WHEN booked_at BETWEEN ? AND ? THEN booked_at ELSE datetime(accounting_date) END';
+    }
+
+    /**
+     * The month bounds displayDateExpression() reads, in placeholder order.
+     *
+     * @return array<int, string>
+     */
+    private function displayDateBindings(): array
+    {
+        return [
+            $this->filters->monthStart()->toDateTimeString(),
+            $this->filters->monthEnd()->toDateTimeString(),
+        ];
+    }
+
+    /**
+     * A row counting towards another month is on screen but is no part of this
+     * month's figures, so the count is a conditional sum rather than a
+     * COUNT(*). This is the one way it differs from an excluded category,
+     * which is genuinely one of the month's transactions.
+     *
+     * @return literal-string
+     */
+    private function countExpression(): string
+    {
+        return 'COALESCE(SUM(CASE WHEN '.$this->countsTowardsMonthCondition().' THEN 1 ELSE 0 END), 0)';
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function countBindings(): array
+    {
+        return $this->countsTowardsMonthBindings();
+    }
+
+    /**
+     * A money sum reads countableAmountExpression() twice, once to test the
+     * sign and once to add it up, so the month bounds are bound twice over.
+     *
+     * @return array<int, string>
+     */
+    private function moneyBindings(): array
+    {
+        return [
+            ...$this->countsTowardsMonthBindings(),
+            ...$this->countsTowardsMonthBindings(),
+        ];
+    }
+
+    /**
+     * Only the date groupings read the display date; the rest are plain
+     * columns with nothing to bind.
+     *
+     * @return array<int, string>
+     */
+    private function groupExpressionBindings(): array
+    {
+        return in_array($this->filters->groupBy, ['day', 'week', 'month'], true)
+            ? $this->displayDateBindings()
+            : [];
+    }
+
+    /**
+     * A sort direction as SQL. Narrowed to one of two literals rather than
+     * concatenated, so the clause it builds stays a literal string.
+     *
+     * @return literal-string
+     */
+    private function rawDirection(string $direction): string
+    {
+        return $direction === 'asc' ? ' asc' : ' desc';
     }
 
     /**
@@ -293,16 +497,19 @@ class TransactionQuery
 
     /**
      * The grouping is built from a fixed set of expressions rather than from
-     * user input, so nothing reaches the database unvalidated.
+     * user input, and the only values interpolated into them are month bounds
+     * formatted by Carbon, so nothing reaches the database unvalidated.
      *
      * @return literal-string
      */
     private function groupExpression(): string
     {
+        $date = $this->displayDateExpression();
+
         return match ($this->filters->groupBy) {
-            'day' => "strftime('%Y-%m-%d', booked_at)",
-            'week' => "strftime('%G-W%V', booked_at)",
-            'month' => "strftime('%Y-%m', booked_at)",
+            'day' => "strftime('%Y-%m-%d', ".$date.')',
+            'week' => "strftime('%G-W%V', ".$date.')',
+            'month' => "strftime('%Y-%m', ".$date.')',
             'category' => "COALESCE(category, '')",
             'account' => 'CAST(account_id AS TEXT)',
             'merchant' => "COALESCE(merchant_name, name, '')",

@@ -71,6 +71,14 @@ test('the same dedupe hash may appear on different accounts', function () {
     expect(Transaction::where('dedupe_hash', 'shared-hash')->count())->toBe(2);
 });
 
+test('the accounting date is optional and round trips as a date', function () {
+    expect(Transaction::factory()->create()->accounting_date)->toBeNull();
+
+    $transaction = Transaction::factory()->create(['accounting_date' => '2026-05-20']);
+
+    expect($transaction->fresh()->accounting_date->toDateString())->toBe('2026-05-20');
+});
+
 test('json columns round trip', function () {
     $transaction = Transaction::factory()->create([
         'tags' => ['#work', '#reimbursable'],

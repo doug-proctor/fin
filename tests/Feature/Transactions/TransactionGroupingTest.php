@@ -119,6 +119,77 @@ test('the group key computed in php matches the one computed in sql', function (
     }
 });
 
+test('the group key computed in php matches the one computed in sql for a row that travelled', function () {
+    /** Straddling a month boundary and an ISO week boundary at once. */
+    Transaction::factory()->forAccount($this->monzo)->create([
+        'booked_at' => '2025-12-31 10:00:00', 'accounting_date' => '2026-01-02',
+    ]);
+    Transaction::factory()->forAccount($this->monzo)->create([
+        'booked_at' => '2026-01-02 10:00:00', 'accounting_date' => '2025-12-31',
+    ]);
+
+    foreach (['2025-12', '2026-01'] as $month) {
+        foreach (['day', 'week', 'month'] as $groupBy) {
+            $query = query($this->user, ['group_by' => $groupBy, 'month' => $month]);
+            $subtotals = $query->groupSubtotals();
+
+            foreach ($query->rows() as $transaction) {
+                $key = $query->groupKeyFor($transaction);
+
+                expect(array_key_exists($key, $subtotals))->toBeTrue(
+                    "PHP produced group key '{$key}' for {$groupBy} in {$month}, which SQL did not.",
+                );
+            }
+        }
+    }
+});
+
+test('a row groups under the accounting date in the month it counts towards', function () {
+    Transaction::factory()->forAccount($this->monzo)->create([
+        'booked_at' => '2026-05-28 10:00:00',
+        'accounting_date' => '2026-06-03',
+        'amount_minor' => -4500,
+    ]);
+
+    $subtotals = query($this->user, ['group_by' => 'day', 'month' => '2026-06'])->groupSubtotals();
+
+    expect($subtotals)->toHaveKey('2026-06-03');
+    expect($subtotals)->not->toHaveKey('2026-05-28');
+    expect($subtotals['2026-06-03'])->toBe(['count' => 1, 'moneyIn' => 0, 'moneyOut' => 4500, 'net' => -4500]);
+});
+
+test('a row still heads its booked day in the month it left, with nothing under it', function () {
+    Transaction::factory()->forAccount($this->monzo)->create([
+        'booked_at' => '2026-05-28 10:00:00',
+        'accounting_date' => '2026-06-03',
+        'amount_minor' => -4500,
+    ]);
+
+    $subtotals = query($this->user, ['group_by' => 'day', 'month' => '2026-05'])->groupSubtotals();
+
+    /**
+     * The group survives so the header has something to print; it just adds
+     * up to nothing, which is what the greyed out row is saying.
+     */
+    expect($subtotals['2026-05-28'])->toBe(['count' => 0, 'moneyIn' => 0, 'moneyOut' => 0, 'net' => 0]);
+});
+
+test('grouped rows stay contiguous when one of them travelled in', function () {
+    Transaction::factory()->forAccount($this->monzo)->create(['booked_at' => '2026-06-05 10:00:00']);
+    Transaction::factory()->forAccount($this->monzo)->create(['booked_at' => '2026-06-25 10:00:00']);
+    Transaction::factory()->forAccount($this->monzo)->create([
+        'booked_at' => '2026-05-30 10:00:00', 'accounting_date' => '2026-06-05',
+    ]);
+
+    $query = query($this->user, ['group_by' => 'day', 'month' => '2026-06']);
+
+    $keys = $query->rows()
+        ->map(fn (Transaction $transaction): string => $query->groupKeyFor($transaction))
+        ->all();
+
+    expect($keys)->toBe(['2026-06-25', '2026-06-05', '2026-06-05']);
+});
+
 test('a month is never truncated, however many transactions it holds', function () {
     Transaction::factory()->forAccount($this->monzo)->count(30)->create([
         'booked_at' => '2026-03-15 10:00:00', 'amount_minor' => -100,

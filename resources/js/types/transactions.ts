@@ -8,6 +8,18 @@ export type SortDirection = 'asc' | 'desc';
 export interface TransactionRow {
     id: number;
     bookedAt: string;
+    /**
+     * The date this row reads as in the month on screen: its booked date,
+     * unless it travelled here from another month.
+     */
+    displayDate: string;
+    /** 'YYYY-MM-DD', or null when the row counts in the month it was booked. */
+    accountingDate: string | null;
+    /**
+     * 'ghost' when the row was booked in the month on screen but counts in
+     * another, 'arrival' when it counts here but was booked elsewhere.
+     */
+    timeTravel: 'ghost' | 'arrival' | null;
     name: string | null;
     description: string | null;
     category: string | null;

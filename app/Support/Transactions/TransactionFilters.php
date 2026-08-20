@@ -125,6 +125,16 @@ readonly class TransactionFilters
         return $this->month->copy()->endOfMonth();
     }
 
+    /**
+     * The first day of the month after the one being shown, as the exclusive
+     * upper bound of a half-open range. Distinct from nextMonth(), which is
+     * the navigation arrow and stops at the current month.
+     */
+    public function monthAfter(): Carbon
+    {
+        return $this->monthStart()->addMonthNoOverflow();
+    }
+
     public function isCurrentMonth(): bool
     {
         return $this->month->isSameMonth(Carbon::now());
