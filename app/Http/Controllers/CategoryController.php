@@ -25,7 +25,7 @@ class CategoryController extends Controller
             ->groupBy('category')
             ->pluck(DB::raw('COUNT(*)'), 'category');
 
-        return Inertia::render('transactions/categories', [
+        return Inertia::render('categories', [
             'categories' => Category::query()
                 ->where('user_id', $userId)
                 ->orderBy('label')

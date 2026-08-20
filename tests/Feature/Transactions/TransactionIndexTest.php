@@ -318,7 +318,7 @@ test('the page exposes the accounts and facets the filters need', function () {
     $this->actingAs($this->user)
         ->get(route('transactions.index'))
         ->assertInertia(fn ($page) => $page
-            ->component('transactions/index')
+            ->component('transactions')
             ->has('accounts', 2)
             ->where('facets.categories', ['groceries'])
             ->where('facets.types', ['card_payment'])
