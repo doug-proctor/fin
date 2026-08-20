@@ -25,7 +25,7 @@ class TransactionController extends Controller
 
         $present = new TransactionPresenter($query, Category::labelsFor($user->id));
 
-        return Inertia::render('transactions/index', [
+        return Inertia::render('transactions', [
             'transactions' => $query->rows()->map($present)->all(),
             /**
              * The table shows one month at a time, so this is the paging

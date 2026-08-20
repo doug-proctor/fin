@@ -162,10 +162,10 @@ export function TransactionsFilterBar({
         <Collapsible
             open={panelOpen}
             onOpenChange={setPanelOpen}
-            className="space-y-3"
+            className="contents"
         >
             <div className="flex flex-wrap items-center gap-2">
-                <div className="relative w-full sm:max-w-xs">
+                <div className="relative w-full sm:w-64">
                     <Input
                         ref={searchRef}
                         value={search}
@@ -215,7 +215,12 @@ export function TransactionsFilterBar({
                 )}
             </div>
 
-            <CollapsibleContent className="space-y-3 rounded-lg border p-3">
+            {/*
+             * The trigger row sits beside the page title, so the root is
+             * display:contents and the panel drops to its own full width line
+             * after everything else on that row.
+             */}
+            <CollapsibleContent className="order-last basis-full space-y-3 rounded-lg border p-3">
                 <div className="flex flex-wrap items-center gap-2">
                     <Select
                         value={datePreset}

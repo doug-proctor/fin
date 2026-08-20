@@ -173,7 +173,7 @@ test('the page exposes subtotals when grouping is requested', function () {
     $this->actingAs($this->user)
         ->get(route('transactions.index', ['group_by' => 'day', 'month' => '2026-03']))
         ->assertInertia(fn ($page) => $page
-            ->component('transactions/index')
+            ->component('transactions')
             ->where('subtotals.2026-03-05.moneyOut', 1000)
             ->where('filters.group_by', 'day'));
 });

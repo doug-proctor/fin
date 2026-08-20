@@ -35,7 +35,7 @@ class SyncReportController extends Controller
             ->values()
             ->all();
 
-        return Inertia::render('transactions/sync-reports', [
+        return Inertia::render('sync-reports', [
             'reports' => $reports,
         ]);
     }

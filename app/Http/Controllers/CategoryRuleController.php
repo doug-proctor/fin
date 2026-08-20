@@ -31,7 +31,7 @@ class CategoryRuleController extends Controller
 
         $matchCounts = $this->matchCounts($user->id, $rules);
 
-        return Inertia::render('transactions/rules', [
+        return Inertia::render('rules', [
             'rules' => $rules
                 ->map(fn (CategoryRule $rule): array => [
                     'id' => $rule->id,

@@ -91,10 +91,18 @@ export default function TransactionsIndex({
             <Head title="Transactions" />
 
             <div className="flex h-full flex-1 flex-col gap-4 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                     <h1 className="text-xl font-semibold">Transactions</h1>
 
-                    <div className="flex flex-wrap gap-2">
+                    <TransactionsFilterBar
+                        filters={filters}
+                        accounts={accounts}
+                        facets={facets}
+                        categories={options.categories}
+                        controls={controls}
+                    />
+
+                    <div className="ml-auto flex flex-wrap gap-2">
                         {monzoConnected && (
                             <Form
                                 {...syncMonzo.form()}
@@ -123,14 +131,6 @@ export default function TransactionsIndex({
                 </div>
 
                 <TransactionsSummary summary={summary} />
-
-                <TransactionsFilterBar
-                    filters={filters}
-                    accounts={accounts}
-                    facets={facets}
-                    categories={options.categories}
-                    controls={controls}
-                />
 
                 <TransactionsMonthNav
                     month={month}
