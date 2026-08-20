@@ -18,12 +18,13 @@ use Illuminate\Support\Str;
  * @property string $name
  * @property string $match_field
  * @property string $match_type
- * @property string $match_value
+ * @property array<int, string> $match_values
  * @property int|null $amount_min_minor
  * @property int|null $amount_max_minor
  * @property int|null $amount_minor
  * @property int|null $day_of_month
  * @property string|null $set_category
+ * @property string|null $set_name
  * @property array<int, string>|null $set_tags
  * @property int $priority
  * @property bool $stops_processing
@@ -40,12 +41,13 @@ use Illuminate\Support\Str;
     'name',
     'match_field',
     'match_type',
-    'match_value',
+    'match_values',
     'amount_min_minor',
     'amount_max_minor',
     'amount_minor',
     'day_of_month',
     'set_category',
+    'set_name',
     'set_tags',
     'priority',
     'stops_processing',
@@ -76,6 +78,7 @@ class CategoryRule extends Model
     protected function casts(): array
     {
         return [
+            'match_values' => 'array',
             'set_tags' => 'array',
             'stops_processing' => 'boolean',
             'is_active' => 'boolean',
@@ -178,10 +181,23 @@ class CategoryRule extends Model
         ));
     }
 
+    /**
+     * A rule holds a list of strings and matches on any of them, so the first
+     * one that matches settles it.
+     */
     private function matchesHaystack(string $haystack): bool
     {
-        $needle = $this->match_value;
+        foreach ($this->match_values ?? [] as $needle) {
+            if ($this->matchesNeedle($haystack, $needle)) {
+                return true;
+            }
+        }
 
+        return false;
+    }
+
+    private function matchesNeedle(string $haystack, string $needle): bool
+    {
         return match ($this->match_type) {
             'equals' => mb_strtolower($haystack) === mb_strtolower($needle),
             'starts_with' => Str::startsWith(mb_strtolower($haystack), mb_strtolower($needle)),

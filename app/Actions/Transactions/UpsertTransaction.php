@@ -4,7 +4,6 @@ namespace App\Actions\Transactions;
 
 use App\Models\Account;
 use App\Models\AmexSyncReport;
-use App\Models\Category;
 use App\Models\Transaction;
 use App\Support\Transactions\TransactionData;
 
@@ -31,15 +30,6 @@ class UpsertTransaction
             ->where('dedupe_hash', $data->dedupeHash)
             ->first();
 
-        /**
-         * A category the user made in the Monzo app arrives as an id with no
-         * name attached, so it is registered on the way past. Without this it
-         * would have nothing to display and would read as uncategorised.
-         */
-        if ($data->category !== null) {
-            Category::ensure($account->user_id, $data->category);
-        }
-
         if ($existing === null) {
             return new UpsertResult($this->create($account, $data, $batch), created: true);
         }
@@ -57,9 +47,13 @@ class UpsertTransaction
             'amex_sync_report_id' => $batch?->id,
             'external_id' => $data->externalId,
             'dedupe_hash' => $data->dedupeHash,
-            'categorised_by' => $data->category !== null ? 'source' : null,
         ]);
 
+        /**
+         * A row arrives uncategorised whatever the source sent. The rules are
+         * the only thing that can file one on the way in; anything they do
+         * not match is left for the user.
+         */
         $this->applyCategoryRules->handle($transaction);
 
         $transaction->save();

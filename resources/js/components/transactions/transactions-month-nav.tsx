@@ -3,6 +3,8 @@ import { Button } from '@/components/ui/button';
 
 export interface MonthNav {
     label: string;
+    /** The month being shown, as "2026-08", for anything that posts back. */
+    current: string;
     previous: string;
     /** Null on the current month, because there is no month after it. */
     next: string | null;

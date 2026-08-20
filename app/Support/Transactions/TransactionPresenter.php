@@ -40,7 +40,7 @@ class TransactionPresenter
             'name' => $transaction->name,
             'description' => $transaction->description,
             'category' => $transaction->category,
-            /** Falls back to the raw value for a category not yet named. */
+            /** Falls back to the raw value if the category row has gone. */
             'categoryLabel' => $transaction->category === null
                 ? null
                 : ($this->categoryLabels[$transaction->category] ?? $transaction->category),
@@ -56,6 +56,8 @@ class TransactionPresenter
             'accountName' => $transaction->account->name,
             'accountProvider' => $transaction->account->provider,
             'categorisedBy' => $transaction->categorised_by,
+            /** Drives the unread-style dot on rows still waiting to be reviewed. */
+            'processed' => $transaction->processed,
             /** Lets the table mark a row the totals deliberately leave out. */
             'excludedFromTotals' => Category::isExcludedFromTotals($transaction->category),
             /** Which fields the user has taken ownership of, so the UI can mark them. */

@@ -41,8 +41,8 @@ class User extends Authenticatable implements PasskeyUser
     use HasFactory, Notifiable, PasskeyAuthenticatable;
 
     /**
-     * A new account starts with Monzo's built-in categories, so the category
-     * control on the transactions screen is never empty.
+     * A new account starts with Category::DEFAULTS, so the category control
+     * on the transactions screen is never empty.
      */
     protected static function booted(): void
     {

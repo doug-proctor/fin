@@ -47,7 +47,7 @@ test('the summary totals money in and out across the whole filtered set', functi
 
 test('a transfer keeps its place in the count but adds nothing to the money totals', function () {
     Transaction::factory()->forAccount($this->monzo)->create(['amount_minor' => -1000, 'category' => 'groceries']);
-    Transaction::factory()->forAccount($this->monzo)->create(['amount_minor' => 5000, 'category' => 'income']);
+    Transaction::factory()->forAccount($this->monzo)->create(['amount_minor' => 5000, 'category' => null]);
     Transaction::factory()->forAccount($this->monzo)->transfer()->create(['amount_minor' => -20000]);
     Transaction::factory()->forAccount($this->monzo)->transfer()->create(['amount_minor' => 20000]);
 
@@ -120,7 +120,7 @@ test('transactions can be filtered by direction', function () {
 
 test('transactions can be filtered by category', function () {
     Transaction::factory()->forAccount($this->monzo)->count(2)->create(['category' => 'groceries']);
-    Transaction::factory()->forAccount($this->monzo)->create(['category' => 'bills']);
+    Transaction::factory()->forAccount($this->monzo)->create(['category' => 'personal_care']);
 
     expect(query($this->user, ['categories' => ['groceries']])->summary()['count'])->toBe(2);
 });
@@ -151,6 +151,40 @@ test('search covers name, description, merchant and notes', function () {
     Transaction::factory()->forAccount($this->monzo)->create(['name' => 'D', 'description' => 'Q', 'merchant_name' => null, 'notes' => null]);
 
     expect(query($this->user, ['search' => 'waitrose'])->summary()['count'])->toBe(4);
+});
+
+test('transactions can be filtered to the unprocessed ones only', function () {
+    Transaction::factory()->forAccount($this->monzo)->count(2)->create();
+    Transaction::factory()->forAccount($this->monzo)->processed()->count(3)->create();
+
+    expect(query($this->user)->summary()['count'])->toBe(5);
+    expect(query($this->user, ['unprocessed' => true])->summary()['count'])->toBe(2);
+
+    /** The checkbox is off by default, which must not narrow anything. */
+    expect(query($this->user, ['unprocessed' => false])->summary()['count'])->toBe(5);
+});
+
+/** The checkbox reaches the server as a string, so both spellings must read alike. */
+test('the unprocessed filter reads a query string value', function () {
+    Transaction::factory()->forAccount($this->monzo)->create();
+    Transaction::factory()->forAccount($this->monzo)->processed()->create();
+
+    expect(query($this->user, ['unprocessed' => 'true'])->summary()['count'])->toBe(1);
+    expect(query($this->user, ['unprocessed' => 'false'])->summary()['count'])->toBe(2);
+});
+
+test('a row says whether it has been processed yet', function () {
+    Transaction::factory()->forAccount($this->monzo)->create(['name' => 'Fresh']);
+    Transaction::factory()->forAccount($this->monzo)->processed()->create(['name' => 'Reviewed']);
+
+    $rows = $this->actingAs($this->user)
+        ->get(route('transactions.index'))
+        ->viewData('page')['props']['transactions'];
+
+    $processed = collect($rows)->keyBy('name')->map(fn (array $row): bool => $row['processed']);
+
+    expect($processed['Fresh'])->toBeFalse();
+    expect($processed['Reviewed'])->toBeTrue();
 });
 
 test('transactions can be filtered by tag', function () {
@@ -295,6 +329,7 @@ test('filters survive a round trip through the query string', function () {
         'group_by' => 'month',
         'sort' => 'amount',
         'month' => '2026-03',
+        'unprocessed' => true,
     ]);
 
     $restored = TransactionFilters::fromArray($filters->toQuery());
@@ -306,6 +341,7 @@ test('filters survive a round trip through the query string', function () {
     expect($restored->groupBy)->toBe('month');
     expect($restored->sort)->toBe('amount');
     expect($restored->monthStart()->format('Y-m'))->toBe('2026-03');
+    expect($restored->unprocessed)->toBeTrue();
 });
 
 test('the page exposes the accounts and facets the filters need', function () {

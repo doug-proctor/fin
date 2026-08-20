@@ -3,7 +3,6 @@ import { Plus } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import Heading from '@/components/heading';
 import InputError from '@/components/input-error';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -32,7 +31,6 @@ interface Category {
     value: string;
     label: string;
     count: number;
-    isUnnamed: boolean;
 }
 
 interface Props {
@@ -40,20 +38,8 @@ interface Props {
 }
 
 /**
- * Whether the user made this category rather than getting it from Monzo:
- * `category_` is one they made in the Monzo app, `custom_` one they made here.
- * Anything else is a Monzo built-in.
- */
-function isOwn(category: Category): boolean {
-    return (
-        category.value.startsWith('category_') ||
-        category.value.startsWith('custom_')
-    );
-}
-
-/**
- * Renames one category. The value is the bank's handle on it and is never
- * editable, so only the display name is in play.
+ * Renames one category. The value is the stable handle its transactions are
+ * filed under and is never editable, so only the display name is in play.
  */
 function LabelCell({ category }: { category: Category }) {
     const [isEditing, setIsEditing] = useState(false);
@@ -115,13 +101,7 @@ function LabelCell({ category }: { category: Category }) {
             }}
             className="-mx-1 w-full rounded px-1 py-0.5 text-left hover:bg-muted"
         >
-            {category.isUnnamed ? (
-                <span className="font-mono text-xs text-muted-foreground">
-                    {category.label}
-                </span>
-            ) : (
-                category.label
-            )}
+            {category.label}
         </button>
     );
 }
@@ -152,9 +132,7 @@ export default function Categories({ categories }: Props) {
                             <DialogContent>
                                 <DialogTitle>New category</DialogTitle>
                                 <DialogDescription>
-                                    For filing transactions Monzo has no
-                                    category of its own for, such as the ones
-                                    imported from AMEX.
+                                    A new category to file transactions under.
                                 </DialogDescription>
 
                                 <Form
@@ -215,7 +193,6 @@ export default function Categories({ categories }: Props) {
                         <TableHeader>
                             <TableRow>
                                 <TableHead>Name</TableHead>
-                                <TableHead>Source</TableHead>
                                 <TableHead className="text-right">
                                     Transactions
                                 </TableHead>
@@ -225,7 +202,7 @@ export default function Categories({ categories }: Props) {
                             {categories.length === 0 && (
                                 <TableRow>
                                     <TableCell
-                                        colSpan={3}
+                                        colSpan={2}
                                         className="py-12 text-center text-muted-foreground"
                                     >
                                         No categories yet. Add one to start
@@ -238,13 +215,6 @@ export default function Categories({ categories }: Props) {
                                 <TableRow key={category.id}>
                                     <TableCell className="max-w-[24rem]">
                                         <LabelCell category={category} />
-                                    </TableCell>
-                                    <TableCell>
-                                        <Badge variant="outline">
-                                            {isOwn(category)
-                                                ? 'Yours'
-                                                : 'Monzo'}
-                                        </Badge>
                                     </TableCell>
                                     <TableCell className="text-right text-muted-foreground tabular-nums">
                                         {category.count.toLocaleString()}

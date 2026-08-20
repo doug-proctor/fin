@@ -1,6 +1,8 @@
 import { useForm } from '@inertiajs/react';
 import InputError from '@/components/input-error';
+import { TagInput } from '@/components/transactions/tag-input';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
     Dialog,
     DialogContent,
@@ -26,6 +28,8 @@ import type { CategoryOption, TransactionRow } from '@/types/transactions';
 interface Props {
     transaction: TransactionRow | null;
     categories: CategoryOption[];
+    /** Every tag already in use, offered by the tag field's dropdown. */
+    tags: string[];
     onClose: () => void;
 }
 
@@ -44,7 +48,12 @@ interface EditForm {
     description: string;
     category: string;
     notes: string;
+<<<<<<< Updated upstream
     accounting_date: string;
+=======
+    tags: string[];
+    processed: boolean;
+>>>>>>> Stashed changes
 }
 
 /** Fields that are sent as typed, and blank back to null. */
@@ -53,6 +62,7 @@ const NULLABLE_FIELDS = ['description', 'notes', 'accounting_date'] as const;
 export function TransactionEditDialog({
     transaction,
     categories,
+    tags,
     onClose,
 }: Props) {
     return (
@@ -75,6 +85,7 @@ export function TransactionEditDialog({
                         key={transaction.id}
                         transaction={transaction}
                         categories={categories}
+                        tags={tags}
                         onClose={onClose}
                     />
                 )}
@@ -86,17 +97,24 @@ export function TransactionEditDialog({
 function EditTransactionForm({
     transaction,
     categories,
+    tags,
     onClose,
 }: {
     transaction: TransactionRow;
     categories: CategoryOption[];
+    tags: string[];
     onClose: () => void;
 }) {
     const initial: EditForm = {
         description: transaction.description ?? '',
         category: transaction.category ?? NO_CATEGORY,
         notes: transaction.notes ?? '',
+<<<<<<< Updated upstream
         accounting_date: transaction.accountingDate ?? '',
+=======
+        tags: transaction.tags,
+        processed: transaction.processed,
+>>>>>>> Stashed changes
     };
 
     const form = useForm<EditForm>(initial);
@@ -119,6 +137,28 @@ function EditTransactionForm({
         if (data.category !== initial.category) {
             changed.category =
                 data.category === NO_CATEGORY ? null : data.category;
+        }
+
+        /**
+         * Tags are their own field rather than words lifted out of the note,
+         * so they are sent whenever the list itself differs. Order is part of
+         * the value: it is the order they were added in and the order they are
+         * shown in.
+         */
+        if (
+            data.tags.length !== initial.tags.length ||
+            data.tags.some((tag, index) => tag !== initial.tags[index])
+        ) {
+            changed.tags = data.tags;
+        }
+
+        /**
+         * Local state rather than a bank field, so sending it records no
+         * override; it still only goes when it actually changed, to keep the
+         * "nothing to save" case closing without a request.
+         */
+        if (data.processed !== initial.processed) {
+            changed.processed = data.processed;
         }
 
         return changed;
@@ -224,10 +264,17 @@ function EditTransactionForm({
                     <InputError message={errors.category} />
                 </div>
 
-                {/*
-                 * Tags have no field of their own, because they are the "#tag"
-                 * words inside the note and get rewritten whenever it changes.
-                 */}
+                <div className="space-y-2">
+                    <Label htmlFor="tags">Tags</Label>
+                    <TagInput
+                        id="tags"
+                        value={data.tags}
+                        suggestions={tags}
+                        onChange={(next) => setData('tags', next)}
+                    />
+                    <InputError message={errors.tags} />
+                </div>
+
                 <div className="space-y-2">
                     <Label htmlFor="notes">Notes</Label>
                     <Textarea
@@ -238,12 +285,10 @@ function EditTransactionForm({
                             setData('notes', event.target.value)
                         }
                     />
-                    <p className="text-xs text-muted-foreground">
-                        Words starting with # become tags.
-                    </p>
                     <InputError message={errors.notes} />
                 </div>
 
+<<<<<<< Updated upstream
                 {/*
                  * For a charge that landed in the wrong month: a meal eaten in
                  * May and settled up with a friend in June. The booked date
@@ -265,6 +310,17 @@ function EditTransactionForm({
                     </p>
                     <InputError message={errors.accounting_date} />
                 </div>
+=======
+                <label className="flex items-center gap-2 text-sm">
+                    <Checkbox
+                        checked={data.processed}
+                        onCheckedChange={(checked) =>
+                            setData('processed', checked === true)
+                        }
+                    />
+                    Processed
+                </label>
+>>>>>>> Stashed changes
             </div>
 
             <DialogFooter className="mt-6 gap-2">

@@ -58,3 +58,11 @@ export function parseMoneyToMinor(
 
     return Math.round(Number(cleaned) * 100);
 }
+
+/**
+ * Signed minor units back into the decimal string a money input expects, so a
+ * stored amount can be loaded into the form it was typed in.
+ */
+export function formatMinorForInput(minorUnits: number | null): string {
+    return minorUnits === null ? '' : (minorUnits / 100).toFixed(2);
+}

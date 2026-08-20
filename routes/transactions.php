@@ -19,10 +19,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('rules', [CategoryRuleController::class, 'index'])->name('category-rules.index');
     Route::post('rules', [CategoryRuleController::class, 'store'])->name('category-rules.store');
     Route::post('rules/apply', [CategoryRuleController::class, 'apply'])->name('category-rules.apply');
+    Route::post('rules/{categoryRule}/apply', [CategoryRuleController::class, 'applyOne'])->name('category-rules.apply-one');
     Route::patch('rules/{categoryRule}', [CategoryRuleController::class, 'update'])->name('category-rules.update');
     Route::delete('rules/{categoryRule}', [CategoryRuleController::class, 'destroy'])->name('category-rules.destroy');
 
     Route::post('transactions/import', [TransactionImportController::class, 'store'])->name('transactions.import.store');
+
+    Route::post('transactions/mark-processed', [TransactionController::class, 'markProcessed'])->name('transactions.mark-processed');
 
     Route::patch('transactions/{transaction}', [TransactionController::class, 'update'])->name('transactions.update');
 });

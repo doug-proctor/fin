@@ -31,6 +31,7 @@ use Illuminate\Support\Carbon;
  * @property array<string, bool>|null $overrides
  * @property string|null $categorised_by
  * @property int|null $category_rule_id
+ * @property bool $processed
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read int $money_in_minor
@@ -68,6 +69,17 @@ class Transaction extends Model
     use HasFactory;
 
     /**
+     * A row starts life unprocessed, whichever source produced it. Held here
+     * as well as on the column so an instance that has not been saved yet
+     * reads the same as one that has.
+     *
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'processed' => false,
+    ];
+
+    /**
      * Fields a sync or import is allowed to refresh from the provider, and so
      * the only fields an override can protect. Anything outside this list is
      * either local state or identity and is never touched by an import.
@@ -80,7 +92,6 @@ class Transaction extends Model
         'currency',
         'name',
         'description',
-        'category',
         'type',
         'merchant_name',
         'notes',
@@ -100,6 +111,7 @@ class Transaction extends Model
             'tags' => 'array',
             'overrides' => 'array',
             'amount_minor' => 'integer',
+            'processed' => 'boolean',
         ];
     }
 
@@ -164,6 +176,29 @@ class Transaction extends Model
     protected function moneyOutMinor(): Attribute
     {
         return Attribute::get(fn (): int => max(-$this->amount_minor, 0));
+    }
+
+    /**
+     * Every tag this user has in use, sorted, for the fields that suggest one.
+     *
+     * Assembled in PHP rather than in SQL because tags are a json array; only
+     * the rows that carry any are read.
+     *
+     * @return array<int, string>
+     */
+    public static function tagsFor(int $userId): array
+    {
+        return self::query()
+            ->where('user_id', $userId)
+            ->whereNotNull('tags')
+            ->pluck('tags')
+            ->flatten()
+            ->filter(fn (mixed $tag): bool => is_string($tag) && $tag !== '')
+            ->map(strval(...))
+            ->unique()
+            ->sort()
+            ->values()
+            ->all();
     }
 
     /**

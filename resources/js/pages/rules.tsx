@@ -1,11 +1,19 @@
-import { Form, Head, router } from '@inertiajs/react';
-import { Plus, StopCircle, Trash2, Wand2 } from 'lucide-react';
-import { useState } from 'react';
+import { Head, router, useForm } from '@inertiajs/react';
+import { Pencil, Plus, StopCircle, Trash2 } from 'lucide-react';
+import { Fragment, useState } from 'react';
 import Heading from '@/components/heading';
-import InputError from '@/components/input-error';
+import { RuleEditDialog } from '@/components/rules/rule-edit-dialog';
+import type { RuleFormValues } from '@/components/rules/rule-form-fields';
+import {
+    FIELD_LABELS,
+    RuleFormFields,
+    TYPE_LABELS,
+    ordinal,
+    ruleFormPayload,
+    ruleFormValues,
+} from '@/components/rules/rule-form-fields';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import {
     Dialog,
     DialogClose,
@@ -15,15 +23,6 @@ import {
     DialogTitle,
     DialogTrigger,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
 import {
     Table,
@@ -33,72 +32,25 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
-import { formatMoney, parseMoneyToMinor } from '@/lib/money';
+import { formatMoney } from '@/lib/money';
 import {
     apply,
     destroy,
     index as rulesIndex,
     store,
 } from '@/routes/category-rules';
+import type { CategoryRuleAccount, CategoryRuleRow } from '@/types/rules';
 import type { CategoryOption } from '@/types/transactions';
 
-interface Rule {
-    id: number;
-    name: string;
-    matchField: string;
-    matchType: string;
-    matchValue: string;
-    accountId: number | null;
-    amountMinMinor: number | null;
-    amountMaxMinor: number | null;
-    amountMinor: number | null;
-    dayOfMonth: number | null;
-    setCategory: string | null;
-    setCategoryLabel: string | null;
-    setTags: string[];
-    priority: number;
-    stopsProcessing: boolean;
-    isActive: boolean;
-    matchCount: number;
-}
-
 interface Props {
-    rules: Rule[];
-    accounts: { id: number; name: string }[];
+    rules: CategoryRuleRow[];
+    accounts: CategoryRuleAccount[];
     categories: CategoryOption[];
+    /** Every tag in use, on a transaction or on a rule, for the tag field. */
+    tags: string[];
     matchFields: string[];
     matchTypes: string[];
-    uncategorisedCount: number;
     recategorisableCount: number;
-}
-
-const FIELD_LABELS: Record<string, string> = {
-    any: 'Name, description or merchant',
-    name: 'Name',
-    description: 'Description',
-    merchant_name: 'Merchant',
-};
-
-const TYPE_LABELS: Record<string, string> = {
-    contains: 'contains',
-    equals: 'is exactly',
-    starts_with: 'starts with',
-    regex: 'matches regex',
-};
-
-/**
- * 31 whatever the month. A rule pinned to the 31st simply never fires in
- * February, which is the same answer the user would get from a date picker.
- */
-const DAYS_OF_MONTH = Array.from({ length: 31 }, (_, index) => index + 1);
-
-function ordinal(day: number): string {
-    const suffix =
-        day % 100 >= 11 && day % 100 <= 13
-            ? 'th'
-            : ({ 1: 'st', 2: 'nd', 3: 'rd' }[day % 10] ?? 'th');
-
-    return `${day}${suffix}`;
 }
 
 /**
@@ -122,16 +74,17 @@ export default function CategoryRules({
     rules,
     accounts,
     categories,
+    tags,
     matchFields,
     matchTypes,
-    uncategorisedCount,
     recategorisableCount,
 }: Props) {
     const [showForm, setShowForm] = useState(rules.length === 0);
     const [confirmingReapply, setConfirmingReapply] = useState(false);
-    const [rulePendingDeletion, setRulePendingDeletion] = useState<Rule | null>(
-        null,
-    );
+    const [rulePendingDeletion, setRulePendingDeletion] =
+        useState<CategoryRuleRow | null>(null);
+    const [ruleBeingEdited, setRuleBeingEdited] =
+        useState<CategoryRuleRow | null>(null);
     const accountNames = new Map(accounts.map((a) => [a.id, a.name]));
 
     return (
@@ -150,25 +103,9 @@ export default function CategoryRules({
                         New rule
                     </Button>
 
-                    <Button
-                        variant="secondary"
-                        onClick={() =>
-                            router.post(
-                                apply.url(),
-                                { only_uncategorised: true },
-                                { preserveScroll: true },
-                            )
-                        }
-                    >
-                        <Wand2 className="h-4 w-4" />
-                        Apply to {uncategorisedCount.toLocaleString()}{' '}
-                        uncategorised
-                    </Button>
-
                     {/*
                      * Re-applying overwrites categories that are already set,
-                     * so it asks first. Applying to uncategorised rows only
-                     * fills in blanks and needs no confirmation.
+                     * so it asks first.
                      */}
                     <Dialog
                         open={confirmingReapply}
@@ -216,7 +153,7 @@ export default function CategoryRules({
                                     onClick={() =>
                                         router.post(
                                             apply.url(),
-                                            { only_uncategorised: false },
+                                            {},
                                             {
                                                 preserveScroll: true,
                                                 onFinish: () =>
@@ -233,285 +170,14 @@ export default function CategoryRules({
                 </div>
 
                 {showForm && (
-                    <Form
-                        {...store.form()}
-                        options={{ preserveScroll: true }}
-                        /*
-                         * The amount is typed in pounds but stored in signed
-                         * minor units, and a blank optional field has to reach
-                         * the server as null rather than as an empty string
-                         * the integer and date rules would both reject.
-                         */
-                        transform={(data) => {
-                            const { amount, amount_min, amount_max, ...rest } =
-                                data as Record<string, string>;
-
-                            return {
-                                ...rest,
-                                amount_min_minor: parseMoneyToMinor(amount_min),
-                                amount_max_minor: parseMoneyToMinor(amount_max),
-                                amount_minor: parseMoneyToMinor(amount),
-                                day_of_month:
-                                    rest.day_of_month === '' ||
-                                    rest.day_of_month === undefined
-                                        ? null
-                                        : Number(rest.day_of_month),
-                            };
-                        }}
-                        onSuccess={() => setShowForm(false)}
-                        className="grid max-w-3xl gap-4 rounded-lg border p-4 sm:grid-cols-2"
-                    >
-                        {({ processing, errors }) => (
-                            <>
-                                <div className="space-y-2 sm:col-span-2">
-                                    <Label htmlFor="name">Rule name</Label>
-                                    <Input
-                                        id="name"
-                                        name="name"
-                                        placeholder="Supermarkets"
-                                        required
-                                    />
-                                    <InputError message={errors.name} />
-                                </div>
-
-                                <div className="grid gap-4 sm:col-span-2 sm:grid-cols-3">
-                                    <div className="space-y-2">
-                                        <Label htmlFor="match_field">
-                                            Look at
-                                        </Label>
-                                        <Select
-                                            name="match_field"
-                                            defaultValue="any"
-                                        >
-                                            <SelectTrigger id="match_field">
-                                                <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {matchFields.map((field) => (
-                                                    <SelectItem
-                                                        key={field}
-                                                        value={field}
-                                                    >
-                                                        {FIELD_LABELS[field] ??
-                                                            field}
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
-
-                                    <div className="space-y-2">
-                                        <Label htmlFor="match_type">
-                                            Which
-                                        </Label>
-                                        <Select
-                                            name="match_type"
-                                            defaultValue="contains"
-                                        >
-                                            <SelectTrigger id="match_type">
-                                                <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {matchTypes.map((type) => (
-                                                    <SelectItem
-                                                        key={type}
-                                                        value={type}
-                                                    >
-                                                        {TYPE_LABELS[type] ??
-                                                            type}
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
-
-                                    <div className="space-y-2">
-                                        <Label htmlFor="match_value">
-                                            This text
-                                        </Label>
-                                        <Input
-                                            id="match_value"
-                                            name="match_value"
-                                            placeholder="tesco"
-                                            required
-                                        />
-                                        <InputError
-                                            message={errors.match_value}
-                                        />
-                                    </div>
-                                </div>
-
-                                {/*
-                                 * All four optional. Left blank the rule
-                                 * matches on its text alone, which is how
-                                 * every rule written before these existed
-                                 * behaves. An exact amount and a range are
-                                 * refused together, because a rule cannot
-                                 * sensibly be both.
-                                 */}
-                                <div className="space-y-2">
-                                    <Label htmlFor="amount_min_minor">
-                                        At least
-                                    </Label>
-                                    <Input
-                                        id="amount_min_minor"
-                                        name="amount_min"
-                                        type="number"
-                                        step="0.01"
-                                        placeholder="No lower bound"
-                                    />
-                                    <InputError
-                                        message={errors.amount_min_minor}
-                                    />
-                                </div>
-
-                                <div className="space-y-2">
-                                    <Label htmlFor="amount_max_minor">
-                                        At most
-                                    </Label>
-                                    <Input
-                                        id="amount_max_minor"
-                                        name="amount_max"
-                                        type="number"
-                                        step="0.01"
-                                        placeholder="No upper bound"
-                                    />
-                                    <p className="text-xs text-muted-foreground">
-                                        Money out is negative, so −50 to −10 is
-                                        a spend between £10 and £50.
-                                    </p>
-                                    <InputError
-                                        message={errors.amount_max_minor}
-                                    />
-                                </div>
-
-                                <div className="space-y-2">
-                                    <Label htmlFor="amount_minor">
-                                        Only this amount
-                                    </Label>
-                                    <Input
-                                        id="amount_minor"
-                                        name="amount"
-                                        type="number"
-                                        step="0.01"
-                                        placeholder="Any amount"
-                                    />
-                                    <p className="text-xs text-muted-foreground">
-                                        Negative for money out, so −9.99 is a
-                                        charge.
-                                    </p>
-                                    <InputError message={errors.amount_minor} />
-                                </div>
-
-                                <div className="space-y-2">
-                                    <Label htmlFor="day_of_month">
-                                        Only this day of the month
-                                    </Label>
-                                    <Select name="day_of_month">
-                                        <SelectTrigger id="day_of_month">
-                                            <SelectValue placeholder="Any day" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {DAYS_OF_MONTH.map((day) => (
-                                                <SelectItem
-                                                    key={day}
-                                                    value={String(day)}
-                                                >
-                                                    {ordinal(day)}
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                    <InputError message={errors.day_of_month} />
-                                </div>
-
-                                <div className="space-y-2">
-                                    <Label htmlFor="set_category">
-                                        Set category
-                                    </Label>
-                                    <Select name="set_category">
-                                        <SelectTrigger id="set_category">
-                                            <SelectValue placeholder="Choose…" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {categories.map((category) => (
-                                                <SelectItem
-                                                    key={category.value}
-                                                    value={category.value}
-                                                >
-                                                    {category.label}
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                    <InputError message={errors.set_category} />
-                                </div>
-
-                                <div className="space-y-2">
-                                    <Label htmlFor="priority">
-                                        Priority (higher runs first)
-                                    </Label>
-                                    <Input
-                                        id="priority"
-                                        name="priority"
-                                        type="number"
-                                        defaultValue={0}
-                                    />
-                                </div>
-
-                                <div className="space-y-2 sm:col-span-2">
-                                    <Label htmlFor="account_id">
-                                        Limit to account
-                                    </Label>
-                                    <Select name="account_id">
-                                        <SelectTrigger id="account_id">
-                                            <SelectValue placeholder="All accounts" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {accounts.map((account) => (
-                                                <SelectItem
-                                                    key={account.id}
-                                                    value={String(account.id)}
-                                                >
-                                                    {account.name}
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-
-                                <label className="flex items-center gap-2 text-sm sm:col-span-2">
-                                    <Checkbox
-                                        name="stops_processing"
-                                        defaultChecked
-                                        value="1"
-                                    />
-                                    Stop checking further rules once this one
-                                    matches
-                                </label>
-
-                                <input
-                                    type="hidden"
-                                    name="is_active"
-                                    value="1"
-                                />
-
-                                <div className="flex gap-2 sm:col-span-2">
-                                    <Button type="submit" disabled={processing}>
-                                        {processing && <Spinner />}
-                                        Save rule
-                                    </Button>
-                                    <Button
-                                        type="button"
-                                        variant="ghost"
-                                        onClick={() => setShowForm(false)}
-                                    >
-                                        Cancel
-                                    </Button>
-                                </div>
-                            </>
-                        )}
-                    </Form>
+                    <CreateRuleForm
+                        categories={categories}
+                        accounts={accounts}
+                        tags={tags}
+                        matchFields={matchFields}
+                        matchTypes={matchTypes}
+                        onDone={() => setShowForm(false)}
+                    />
                 )}
 
                 <div className="rounded-lg border">
@@ -545,14 +211,34 @@ export default function CategoryRules({
                             )}
 
                             {rules.map((rule) => (
+                                /*
+                                 * The whole row opens the edit dialog, but a
+                                 * click handler on a <tr> is invisible to a
+                                 * keyboard, and giving the row a button role
+                                 * would cost the table its semantics. So the
+                                 * mouse gets the row and the keyboard gets the
+                                 * real button in the name cell.
+                                 */
                                 <TableRow
                                     key={rule.id}
+                                    onClick={() => setRuleBeingEdited(rule)}
                                     className={
-                                        rule.isActive ? undefined : 'opacity-50'
+                                        rule.isActive
+                                            ? 'cursor-pointer'
+                                            : 'cursor-pointer opacity-50'
                                     }
                                 >
                                     <TableCell className="font-medium">
-                                        {rule.name}
+                                        <button
+                                            type="button"
+                                            onClick={() =>
+                                                setRuleBeingEdited(rule)
+                                            }
+                                            aria-label={`Edit ${rule.name}`}
+                                            className="rounded text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                                        >
+                                            {rule.name}
+                                        </button>
                                         {!rule.isActive && (
                                             <Badge
                                                 variant="outline"
@@ -567,9 +253,16 @@ export default function CategoryRules({
                                             rule.matchField}{' '}
                                         {TYPE_LABELS[rule.matchType] ??
                                             rule.matchType}{' '}
-                                        <code className="text-foreground">
-                                            {rule.matchValue}
-                                        </code>
+                                        {rule.matchValues.map(
+                                            (value, index) => (
+                                                <Fragment key={value}>
+                                                    {index > 0 && ' or '}
+                                                    <code className="text-foreground">
+                                                        {value}
+                                                    </code>
+                                                </Fragment>
+                                            ),
+                                        )}
                                         {rule.amountMinor !== null && (
                                             <span className="block">
                                                 only{' '}
@@ -608,6 +301,15 @@ export default function CategoryRules({
                                         {rule.setCategoryLabel && (
                                             <Badge variant="secondary">
                                                 {rule.setCategoryLabel}
+                                            </Badge>
+                                        )}
+                                        {rule.setName !== null && (
+                                            <Badge
+                                                variant="outline"
+                                                className="ml-1"
+                                            >
+                                                <Pencil className="h-3 w-3" />
+                                                {rule.setName}
                                             </Badge>
                                         )}
                                         {rule.setTags.map((tag) => (
@@ -654,9 +356,10 @@ export default function CategoryRules({
                                             variant="ghost"
                                             size="icon"
                                             aria-label={`Delete ${rule.name}`}
-                                            onClick={() =>
-                                                setRulePendingDeletion(rule)
-                                            }
+                                            onClick={(event) => {
+                                                event.stopPropagation();
+                                                setRulePendingDeletion(rule);
+                                            }}
                                         >
                                             <Trash2 className="h-4 w-4" />
                                         </Button>
@@ -666,6 +369,16 @@ export default function CategoryRules({
                         </TableBody>
                     </Table>
                 </div>
+
+                <RuleEditDialog
+                    rule={ruleBeingEdited}
+                    categories={categories}
+                    accounts={accounts}
+                    tags={tags}
+                    matchFields={matchFields}
+                    matchTypes={matchTypes}
+                    onClose={() => setRuleBeingEdited(null)}
+                />
 
                 {/*
                  * One dialog for the table, told which rule it is confirming,
@@ -727,6 +440,61 @@ export default function CategoryRules({
                 </Dialog>
             </div>
         </>
+    );
+}
+
+function CreateRuleForm({
+    categories,
+    accounts,
+    tags,
+    matchFields,
+    matchTypes,
+    onDone,
+}: {
+    categories: CategoryOption[];
+    accounts: CategoryRuleAccount[];
+    tags: string[];
+    matchFields: string[];
+    matchTypes: string[];
+    onDone: () => void;
+}) {
+    const form = useForm<RuleFormValues>(ruleFormValues());
+    const { data, setData, errors, processing } = form;
+
+    function submit(event: React.FormEvent) {
+        event.preventDefault();
+
+        form.transform(ruleFormPayload);
+
+        form.post(store.url(), {
+            preserveScroll: true,
+            onSuccess: onDone,
+        });
+    }
+
+    return (
+        <form onSubmit={submit} className="max-w-3xl rounded-lg border p-4">
+            <RuleFormFields
+                values={data}
+                setValue={setData}
+                errors={errors}
+                categories={categories}
+                accounts={accounts}
+                tags={tags}
+                matchFields={matchFields}
+                matchTypes={matchTypes}
+            />
+
+            <div className="mt-4 flex gap-2">
+                <Button type="submit" disabled={processing}>
+                    {processing && <Spinner />}
+                    Save rule
+                </Button>
+                <Button type="button" variant="ghost" onClick={onDone}>
+                    Cancel
+                </Button>
+            </div>
+        </form>
     );
 }
 

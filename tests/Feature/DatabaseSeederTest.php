@@ -69,32 +69,41 @@ it('seeds rules the rules form would accept', function (): void {
     CategoryRule::query()->each(function (CategoryRule $rule): void {
         expect(CategoryRule::MATCH_FIELDS)->toContain($rule->match_field)
             ->and(CategoryRule::MATCH_TYPES)->toContain($rule->match_type)
-            ->and($rule->match_value)->not->toBe('')
+            ->and($rule->match_values)->not->toBeEmpty()
             ->and($rule->set_category !== null || ! blank($rule->set_tags))->toBeTrue();
 
         if ($rule->day_of_month !== null) {
             expect($rule->day_of_month)->toBeGreaterThanOrEqual(1)->toBeLessThanOrEqual(31);
         }
 
-        /** A pattern that will not compile silently matches nothing forever. */
-        if ($rule->match_type === 'regex') {
-            expect(@preg_match('/'.str_replace('/', '\/', $rule->match_value).'/', ''))
-                ->not->toBeFalse($rule->name);
+        foreach ($rule->match_values as $value) {
+            expect($value)->toBeString()->not->toBe('');
+
+            /** A pattern that will not compile silently matches nothing forever. */
+            if ($rule->match_type === 'regex') {
+                expect(@preg_match('/'.str_replace('/', '\/', $value).'/', ''))
+                    ->not->toBeFalse($rule->name);
+            }
         }
     });
 });
 
-it('seeds the built-in Monzo categories', function (): void {
-    expect(Category::labelsFor($this->userId))->toMatchArray(Category::MONZO_DEFAULTS);
+it('seeds the categories and nothing else', function (): void {
+    expect(Category::labelsFor($this->userId))->toEqual(Category::DEFAULTS);
 });
 
-it('seeds the renamed custom Monzo categories', function (): void {
-    foreach (DatabaseSeeder::CUSTOM_CATEGORIES as $value => $label) {
-        $category = Category::query()
-            ->where('user_id', $this->userId)
-            ->where('value', $value)
-            ->sole();
+/**
+ * Every category a rule files under has to be declared, or the seeder writes
+ * a rule pointing at nothing. The reverse does not hold: a category can exist
+ * with no rule behind it, for filing transactions by hand.
+ */
+it('declares every category the rules file under', function (): void {
+    $used = collect(CategoryRuleSeeder::CATEGORY_RULES)
+        ->pluck('set_category')
+        ->filter()
+        ->unique();
 
-        expect($category->label)->toBe($label);
-    }
+    $declared = collect(Category::DEFAULTS)->keys();
+
+    expect($used->diff($declared)->all())->toBe([]);
 });

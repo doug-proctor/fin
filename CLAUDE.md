@@ -193,3 +193,18 @@ Use Wayfinder to generate TypeScript functions for Laravel routes. Import from `
 - IMPORTANT: Activate `inertia-react-development` when working with Inertia React client-side patterns.
 
 </laravel-boost-guidelines>
+
+# Writing style for replies
+
+These rules override the "Be concise" line inside the Boost block above.
+
+Write in plain, boring English. Use words that mean what they literally mean.
+Short sentences, one idea each. Name the actual file, column, function or
+number instead of a word picture that stands in for it.
+
+Banned: metaphors, idioms, figures of speech, and marketing words such as
+seamless, robust, leverage, unlock, streamline, empower, journey, deep dive,
+blast radius, friction.
+
+This applies hardest to long answers. A long explanation is where the register
+slips.

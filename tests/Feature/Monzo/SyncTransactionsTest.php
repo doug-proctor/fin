@@ -6,6 +6,7 @@ use App\Exceptions\Monzo\ScaRequiredException;
 use App\Models\Account;
 use App\Models\BankConnection;
 use App\Models\Category;
+use App\Models\CategoryRule;
 use App\Models\MonzoSyncReport;
 use App\Models\Transaction;
 use App\Models\User;
@@ -94,8 +95,11 @@ test('a full sync stores accounts and transactions', function () {
     expect($transaction->money_out_minor)->toBe(1250);
     expect($transaction->name)->toBe('Tesco');
     expect($transaction->merchant_name)->toBe('Tesco');
-    expect($transaction->category)->toBe('groceries');
     expect($transaction->type)->toBe('card_payment');
+
+    /** Monzo said 'groceries'; no rule matched, so the row is unfiled. */
+    expect($transaction->category)->toBeNull();
+    expect($transaction->categorised_by)->toBeNull();
 });
 
 test('an initial pull asks from the fixed start date', function () {
@@ -252,7 +256,7 @@ test('a re-sync never writes over a field the user has edited by hand', function
     $sync->handle($this->connection, initial: true);
 
     $transaction = Transaction::first();
-    $transaction->category = 'bills';
+    $transaction->category = 'personal_care';
     $transaction->notes = 'my own note';
     $transaction->name = 'Renamed by me';
     $transaction->markOverridden(['category', 'notes', 'name']);
@@ -262,7 +266,7 @@ test('a re-sync never writes over a field the user has edited by hand', function
     $sync->handle($this->connection, initial: true);
 
     $transaction = Transaction::first();
-    expect($transaction->category)->toBe('bills');
+    expect($transaction->category)->toBe('personal_care');
     expect($transaction->notes)->toBe('my own note');
     expect($transaction->name)->toBe('Renamed by me');
 
@@ -368,35 +372,40 @@ test('notes hash tags are parsed into the tags column', function () {
     expect(Transaction::first()->tags)->toBe(['work', 'reimbursable']);
 });
 
-test('a monzo custom category becomes a category of its own', function () {
+test('monzo categories are ignored entirely, and only a rule can file a row', function () {
+    CategoryRule::factory()->for($this->user)->create([
+        'match_field' => 'any',
+        'match_type' => 'contains',
+        'match_values' => ['TESCO'],
+        'set_category' => 'groceries',
+        'is_active' => true,
+    ]);
+
     Http::fake([
         'api.monzo.com/accounts*' => Http::response(['accounts' => [['id' => 'acc_1', 'type' => 'uk_retail']]]),
         'api.monzo.com/transactions*' => Http::response(['transactions' => [
-            /** Monzo sends a custom category as an opaque id, not a name. */
+            /** Monzo sends one of its own values and one of its opaque ids. */
             monzoTransaction('tx_1', ['category' => 'category_0000B86WnKknuzF8vd1v9g']),
-            monzoTransaction('tx_2', ['category' => 'eating_out']),
+            monzoTransaction('tx_2', ['category' => 'eating_out', 'description' => 'PRET A MANGER LONDON GBR', 'merchant' => []]),
         ]]),
     ]);
 
     app(SyncMonzoConnection::class)->handle($this->connection, initial: true);
 
-    expect(Transaction::where('external_id', 'tx_1')->value('category'))
-        ->toBe('category_0000B86WnKknuzF8vd1v9g');
+    /** The rule matched on the description, not on anything Monzo sent. */
+    $matched = Transaction::where('external_id', 'tx_1')->first();
+    expect($matched->category)->toBe('groceries');
+    expect($matched->categorised_by)->toBe('rule');
 
-    $custom = Category::query()
-        ->where('user_id', $this->user->id)
-        ->where('value', 'category_0000B86WnKknuzF8vd1v9g')
-        ->first();
+    /** No rule reached this one, so Monzo's 'eating_out' buys it nothing. */
+    $unmatched = Transaction::where('external_id', 'tx_2')->first();
+    expect($unmatched->category)->toBeNull();
+    expect($unmatched->categorised_by)->toBeNull();
 
-    /**
-     * Monzo will not tell a third party client what the user named it, so the
-     * id stands in until they rename it here.
-     */
-    expect($custom)->not->toBeNull();
-    expect($custom->label)->toBe('category_0000B86WnKknuzF8vd1v9g');
-
-    /** A built-in category is matched to the one already seeded, not doubled. */
-    expect(Category::where('user_id', $this->user->id)->where('value', 'eating_out')->count())->toBe(1);
+    /** Nothing Monzo sent was registered as a category of the user's. */
+    expect(Category::where('user_id', $this->user->id)->pluck('value')
+        ->filter(fn (string $value): bool => str_starts_with($value, 'category_')))
+        ->toBeEmpty();
 });
 
 test('a declined transaction is never imported', function () {

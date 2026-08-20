@@ -44,12 +44,23 @@ class TransactionFactory extends Factory
              * test that wants a transfer asks for one.
              */
             'category' => fake()->randomElement(array_diff(
-                array_keys(Category::MONZO_DEFAULTS),
+                array_keys(Category::DEFAULTS),
                 Category::EXCLUDED_FROM_TOTALS,
             )),
             'type' => 'card_payment',
             'merchant_name' => $merchant,
         ];
+    }
+
+    /**
+     * A row the user has already reviewed and marked off. Imported rows start
+     * unprocessed, so this is the state a test asks for to get the other one.
+     */
+    public function processed(): static
+    {
+        return $this->state(fn (array $attributes): array => [
+            'processed' => true,
+        ]);
     }
 
     /**
@@ -66,13 +77,14 @@ class TransactionFactory extends Factory
     }
 
     /**
-     * Money coming in rather than going out.
+     * Money coming in rather than going out. Left unfiled, because there is
+     * no income category: money in is read off the sign of the amount.
      */
     public function income(): static
     {
         return $this->state(fn (array $attributes): array => [
             'amount_minor' => fake()->numberBetween(50000, 300000),
-            'category' => 'income',
+            'category' => null,
             'type' => 'faster_payment',
             'name' => 'Salary',
         ]);

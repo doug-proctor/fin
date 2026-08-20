@@ -223,26 +223,29 @@ class TransactionQuery
             ->pluck('type')
             ->all();
 
-        /**
-         * Tags are a json array, so the distinct set is assembled in PHP over
-         * the rows that actually carry tags rather than in SQL.
-         */
-        $tags = Transaction::query()
-            ->where('user_id', $this->userId)
-            ->whereNotNull('tags')
-            ->pluck('tags')
-            ->flatten()
-            ->filter(fn (mixed $tag): bool => is_string($tag) && $tag !== '')
-            ->unique()
-            ->sort()
-            ->values()
-            ->all();
-
         return [
             'categories' => array_values($categories),
             'types' => array_values(array_map(strval(...), $types)),
-            'tags' => array_values(array_map(strval(...), $tags)),
+            /** Shared with the rules page, so it lives on the model. */
+            'tags' => Transaction::tagsFor($this->userId),
         ];
+    }
+
+    /**
+     * Every row in the month being shown that the user has not marked off yet.
+     *
+     * Deliberately not built on base(): "mark all as processed" works on the
+     * whole month, not on whatever the filter bar has narrowed the table to,
+     * so a filter left switched on cannot quietly shrink what it touches.
+     *
+     * @return Builder<Transaction>
+     */
+    public function monthUnprocessed(): Builder
+    {
+        return Transaction::query()
+            ->where('transactions.user_id', $this->userId)
+            ->whereBetween('booked_at', [$this->filters->monthStart(), $this->filters->monthEnd()])
+            ->where('processed', false);
     }
 
     /**
@@ -280,6 +283,8 @@ class TransactionQuery
             ->when($filters->accountIds, fn (Builder $q, array $ids) => $q->whereIn('account_id', $ids))
             ->when($filters->categories, fn (Builder $q, array $categories) => $q->whereIn('category', $categories))
             ->when($filters->types, fn (Builder $q, array $types) => $q->whereIn('type', $types))
+            /** The unread-mail filter: only rows the user has yet to mark off. */
+            ->when($filters->unprocessed, fn (Builder $q) => $q->where('processed', false))
             ->when(
                 $filters->direction === 'in',
                 fn (Builder $q) => $q->where('amount_minor', '>', 0),

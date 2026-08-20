@@ -20,7 +20,7 @@ test('a rule categorises a transaction as it is imported', function () {
     CategoryRule::factory()->for($this->user)->create([
         'match_field' => 'any',
         'match_type' => 'contains',
-        'match_value' => 'CAFFE NERO',
+        'match_values' => ['CAFFE NERO'],
         'set_category' => 'eating_out',
     ]);
 
@@ -34,11 +34,11 @@ test('a rule categorises a transaction as it is imported', function () {
 
 test('rules run in priority order and the first match can stop the rest', function () {
     CategoryRule::factory()->for($this->user)->create([
-        'name' => 'catch all', 'priority' => 0, 'match_value' => 'TESCO',
-        'set_category' => 'general', 'stops_processing' => true,
+        'name' => 'catch all', 'priority' => 0, 'match_values' => ['TESCO'],
+        'set_category' => 'trips', 'stops_processing' => true,
     ]);
     CategoryRule::factory()->for($this->user)->create([
-        'name' => 'specific', 'priority' => 100, 'match_value' => 'TESCO',
+        'name' => 'specific', 'priority' => 100, 'match_values' => ['TESCO'],
         'set_category' => 'groceries', 'stops_processing' => true,
     ]);
 
@@ -53,11 +53,11 @@ test('rules run in priority order and the first match can stop the rest', functi
 
 test('a rule that does not stop lets a later rule add tags', function () {
     CategoryRule::factory()->for($this->user)->create([
-        'priority' => 100, 'match_value' => 'TESCO', 'stops_processing' => false,
+        'priority' => 100, 'match_values' => ['TESCO'], 'stops_processing' => false,
         'set_category' => 'groceries', 'set_tags' => null,
     ]);
     CategoryRule::factory()->for($this->user)->create([
-        'priority' => 50, 'match_value' => 'TESCO', 'stops_processing' => true,
+        'priority' => 50, 'match_values' => ['TESCO'], 'stops_processing' => true,
         'set_category' => null, 'set_tags' => ['household'],
     ]);
 
@@ -73,7 +73,7 @@ test('a rule that does not stop lets a later rule add tags', function () {
 
 test('an inactive rule is ignored', function () {
     CategoryRule::factory()->for($this->user)->inactive()->create([
-        'match_value' => 'TESCO', 'set_category' => 'groceries',
+        'match_values' => ['TESCO'], 'set_category' => 'groceries',
     ]);
 
     $transaction = Transaction::factory()->forAccount($this->monzo)->make([
@@ -88,7 +88,7 @@ test('an inactive rule is ignored', function () {
 test('a rule scoped to one account leaves the other alone', function () {
     CategoryRule::factory()->for($this->user)->create([
         'account_id' => $this->amex->id,
-        'match_value' => 'SHELL',
+        'match_values' => ['SHELL'],
         'set_category' => 'transport',
     ]);
 
@@ -105,9 +105,9 @@ test('a rule scoped to one account leaves the other alone', function () {
 
 test('amount bounds narrow a rule', function () {
     CategoryRule::factory()->for($this->user)->create([
-        'match_value' => 'AMAZON',
+        'match_values' => ['AMAZON'],
         'amount_max_minor' => -10000,
-        'set_category' => 'shopping',
+        'set_category' => 'personal_care',
     ]);
 
     $small = Transaction::factory()->forAccount($this->monzo)->make(['name' => 'AMAZON', 'amount_minor' => -500, 'category' => null]);
@@ -118,14 +118,14 @@ test('amount bounds narrow a rule', function () {
     $rules->handle($large);
 
     expect($small->category)->toBeNull();
-    expect($large->category)->toBe('shopping');
+    expect($large->category)->toBe('personal_care');
 });
 
 test('an exact amount narrows a rule', function () {
     CategoryRule::factory()->for($this->user)->create([
-        'match_value' => 'NETFLIX',
+        'match_values' => ['NETFLIX'],
         'amount_minor' => -1099,
-        'set_category' => 'entertainment',
+        'set_category' => 'subscriptions',
     ]);
 
     $exact = Transaction::factory()->forAccount($this->monzo)->make(['name' => 'NETFLIX', 'amount_minor' => -1099, 'category' => null]);
@@ -139,16 +139,16 @@ test('an exact amount narrows a rule', function () {
     $rules->handle($other);
     $rules->handle($refund);
 
-    expect($exact->category)->toBe('entertainment');
+    expect($exact->category)->toBe('subscriptions');
     expect($other->category)->toBeNull();
     expect($refund->category)->toBeNull();
 });
 
 test('a day of the month narrows a rule, whatever time of day it was booked', function () {
     CategoryRule::factory()->for($this->user)->create([
-        'match_value' => 'RENT',
+        'match_values' => ['RENT'],
         'day_of_month' => 1,
-        'set_category' => 'bills',
+        'set_category' => 'personal_care',
     ]);
 
     $onTheDay = Transaction::factory()->forAccount($this->monzo)->make([
@@ -162,16 +162,16 @@ test('a day of the month narrows a rule, whatever time of day it was booked', fu
     $rules->handle($onTheDay);
     $rules->handle($dayAfter);
 
-    expect($onTheDay->category)->toBe('bills');
+    expect($onTheDay->category)->toBe('personal_care');
     expect($dayAfter->category)->toBeNull();
 });
 
 /** The whole point of the field: the month and year are not consulted. */
 test('a day of the month matches that day in every month', function () {
     CategoryRule::factory()->for($this->user)->create([
-        'match_value' => 'RENT',
+        'match_values' => ['RENT'],
         'day_of_month' => 4,
-        'set_category' => 'bills',
+        'set_category' => 'personal_care',
     ]);
 
     $march = Transaction::factory()->forAccount($this->monzo)->make([
@@ -189,18 +189,18 @@ test('a day of the month matches that day in every month', function () {
     $rules->handle($november);
     $rules->handle($fifth);
 
-    expect($march->category)->toBe('bills');
-    expect($november->category)->toBe('bills');
+    expect($march->category)->toBe('personal_care');
+    expect($november->category)->toBe('personal_care');
     expect($fifth->category)->toBeNull();
 });
 
 /** Both conditions narrow the same rule, so both have to hold. */
 test('the exact amount and day of the month conditions combine', function () {
     CategoryRule::factory()->for($this->user)->create([
-        'match_value' => 'RENT',
+        'match_values' => ['RENT'],
         'amount_minor' => -95000,
         'day_of_month' => 1,
-        'set_category' => 'bills',
+        'set_category' => 'personal_care',
     ]);
 
     $both = Transaction::factory()->forAccount($this->monzo)->make([
@@ -218,7 +218,7 @@ test('the exact amount and day of the month conditions combine', function () {
     $rules->handle($rightDayWrongAmount);
     $rules->handle($rightAmountWrongDay);
 
-    expect($both->category)->toBe('bills');
+    expect($both->category)->toBe('personal_care');
     expect($rightDayWrongAmount->category)->toBeNull();
     expect($rightAmountWrongDay->category)->toBeNull();
 });
@@ -226,17 +226,17 @@ test('the exact amount and day of the month conditions combine', function () {
 /** Left null they must not narrow anything, or every existing rule breaks. */
 test('a rule with neither condition set still matches on text alone', function () {
     CategoryRule::factory()->for($this->user)->create([
-        'match_value' => 'RENT',
+        'match_values' => ['RENT'],
         'amount_minor' => null,
         'day_of_month' => null,
-        'set_category' => 'bills',
+        'set_category' => 'personal_care',
     ]);
 
     $transaction = Transaction::factory()->forAccount($this->monzo)->make(['name' => 'RENT', 'category' => null]);
 
     app(ApplyCategoryRules::class)->handle($transaction);
 
-    expect($transaction->category)->toBe('bills');
+    expect($transaction->category)->toBe('personal_care');
 });
 
 test('the exact conditions can be saved from the rules form', function () {
@@ -246,10 +246,10 @@ test('the exact conditions can be saved from the rules form', function () {
             'name' => 'March rent',
             'match_field' => 'any',
             'match_type' => 'contains',
-            'match_value' => 'RENT',
+            'match_values' => ['RENT'],
             'amount_minor' => -95000,
             'day_of_month' => 1,
-            'set_category' => 'bills',
+            'set_category' => 'personal_care',
         ])
         ->assertSessionHasNoErrors();
 
@@ -266,9 +266,9 @@ test('a day of the month outside the calendar is refused', function () {
             'name' => 'Impossible',
             'match_field' => 'any',
             'match_type' => 'contains',
-            'match_value' => 'RENT',
+            'match_values' => ['RENT'],
             'day_of_month' => 32,
-            'set_category' => 'bills',
+            'set_category' => 'personal_care',
         ])
         ->assertSessionHasErrors('day_of_month');
 });
@@ -284,10 +284,10 @@ test('leaving the exact conditions blank stores no condition', function () {
             'name' => 'Any rent',
             'match_field' => 'any',
             'match_type' => 'contains',
-            'match_value' => 'RENT',
+            'match_values' => ['RENT'],
             'amount_minor' => null,
             'day_of_month' => null,
-            'set_category' => 'bills',
+            'set_category' => 'personal_care',
         ])
         ->assertSessionHasNoErrors();
 
@@ -304,10 +304,10 @@ test('amount bounds can be saved from the rules form', function () {
             'name' => 'Big spends',
             'match_field' => 'any',
             'match_type' => 'contains',
-            'match_value' => 'AMAZON',
+            'match_values' => ['AMAZON'],
             'amount_min_minor' => -5000,
             'amount_max_minor' => -1000,
-            'set_category' => 'shopping',
+            'set_category' => 'personal_care',
         ])
         ->assertSessionHasNoErrors();
 
@@ -325,10 +325,10 @@ test('an exact amount and a range cannot both be set', function () {
             'name' => 'Contradictory',
             'match_field' => 'any',
             'match_type' => 'contains',
-            'match_value' => 'AMAZON',
+            'match_values' => ['AMAZON'],
             'amount_minor' => -1500,
             'amount_min_minor' => -5000,
-            'set_category' => 'shopping',
+            'set_category' => 'personal_care',
         ])
         ->assertSessionHasErrors('amount_minor');
 
@@ -343,10 +343,10 @@ test('a reversed range is rejected', function () {
             'name' => 'Backwards',
             'match_field' => 'any',
             'match_type' => 'contains',
-            'match_value' => 'AMAZON',
+            'match_values' => ['AMAZON'],
             'amount_min_minor' => -1000,
             'amount_max_minor' => -5000,
-            'set_category' => 'shopping',
+            'set_category' => 'personal_care',
         ])
         ->assertSessionHasErrors('amount_max_minor');
 });
@@ -359,9 +359,9 @@ test('a bound of zero is kept', function () {
             'name' => 'Refunds and free',
             'match_field' => 'any',
             'match_type' => 'contains',
-            'match_value' => 'AMAZON',
+            'match_values' => ['AMAZON'],
             'amount_min_minor' => 0,
-            'set_category' => 'shopping',
+            'set_category' => 'personal_care',
         ])
         ->assertSessionHasNoErrors();
 
@@ -392,18 +392,18 @@ test('the rules listing carries the exact conditions', function () {
 test('the rules listing counts the transactions each rule matches', function () {
     $broad = CategoryRule::factory()->for($this->user)->create([
         'name' => 'Anything AWS',
-        'match_value' => 'AWS',
+        'match_values' => ['AWS'],
         'priority' => 10,
         'stops_processing' => true,
     ]);
     $shadowed = CategoryRule::factory()->for($this->user)->create([
         'name' => 'AWS invoices only',
-        'match_value' => 'AWS INVOICE',
+        'match_values' => ['AWS INVOICE'],
         'priority' => 0,
     ]);
     $never = CategoryRule::factory()->for($this->user)->create([
         'name' => 'Nothing at all',
-        'match_value' => 'NO SUCH MERCHANT',
+        'match_values' => ['NO SUCH MERCHANT'],
         'priority' => -10,
     ]);
 
@@ -442,7 +442,7 @@ test('match types behave as named', function () {
 
     foreach ($cases as [$type, $value, $expected]) {
         $rule = CategoryRule::factory()->for($this->user)->make([
-            'match_field' => 'any', 'match_type' => $type, 'match_value' => $value,
+            'match_field' => 'any', 'match_type' => $type, 'match_values' => [$value],
         ]);
 
         expect($rule->matches($transaction))->toBe($expected, "{$type} '{$value}'");
@@ -451,7 +451,7 @@ test('match types behave as named', function () {
 
 test('a malformed regular expression does not blow up an import', function () {
     $rule = CategoryRule::factory()->for($this->user)->make([
-        'match_type' => 'regex', 'match_value' => '([unclosed',
+        'match_type' => 'regex', 'match_values' => ['([unclosed'],
     ]);
 
     $transaction = Transaction::factory()->forAccount($this->monzo)->make(['name' => 'anything']);
@@ -462,7 +462,7 @@ test('a malformed regular expression does not blow up an import', function () {
 test('re-applying rules never overwrites a category set by hand', function () {
     $byHand = Transaction::factory()->forAccount($this->monzo)->create([
         'name' => 'TESCO STORES',
-        'category' => 'bills',
+        'category' => 'personal_care',
         'categorised_by' => 'user',
         'overrides' => ['category' => true],
     ]);
@@ -471,7 +471,7 @@ test('re-applying rules never overwrites a category set by hand', function () {
     ]);
 
     CategoryRule::factory()->for($this->user)->create([
-        'match_value' => 'TESCO', 'set_category' => 'groceries',
+        'match_values' => ['TESCO'], 'set_category' => 'groceries',
     ]);
 
     $this->actingAs($this->user)
@@ -479,13 +479,13 @@ test('re-applying rules never overwrites a category set by hand', function () {
         ->post(route('category-rules.apply'), ['only_uncategorised' => false])
         ->assertSessionHasNoErrors();
 
-    expect($byHand->fresh()->category)->toBe('bills');
+    expect($byHand->fresh()->category)->toBe('personal_care');
     expect($untouched->fresh()->category)->toBe('groceries');
 });
 
 test('rules give amex and monzo rows the same category', function () {
     CategoryRule::factory()->for($this->user)->create([
-        'match_value' => 'TESCO', 'set_category' => 'groceries',
+        'match_values' => ['TESCO'], 'set_category' => 'groceries',
     ]);
 
     Transaction::factory()->forAccount($this->monzo)->create(['name' => 'TESCO STORES', 'category' => null]);
@@ -504,7 +504,7 @@ test('a rule can be created, edited and deleted', function () {
             'name' => 'Groceries',
             'match_field' => 'any',
             'match_type' => 'contains',
-            'match_value' => 'tesco',
+            'match_values' => ['tesco'],
             'set_category' => 'groceries',
             'priority' => 10,
             'stops_processing' => true,
@@ -521,7 +521,7 @@ test('a rule can be created, edited and deleted', function () {
             'name' => 'Supermarkets',
             'match_field' => 'any',
             'match_type' => 'contains',
-            'match_value' => 'tesco',
+            'match_values' => ['tesco'],
             'set_category' => 'groceries',
             'stops_processing' => true,
             'is_active' => true,
@@ -543,7 +543,7 @@ test('a rule that applies nothing is rejected', function () {
             'name' => 'Does nothing',
             'match_field' => 'any',
             'match_type' => 'contains',
-            'match_value' => 'tesco',
+            'match_values' => ['tesco'],
         ])
         ->assertSessionHasErrors('set_category');
 });
@@ -554,10 +554,10 @@ test('an invalid regular expression is rejected at the form', function () {
             'name' => 'Broken',
             'match_field' => 'any',
             'match_type' => 'regex',
-            'match_value' => '([unclosed',
+            'match_values' => ['([unclosed'],
             'set_category' => 'groceries',
         ])
-        ->assertSessionHasErrors('match_value');
+        ->assertSessionHasErrors('match_values.0');
 });
 
 test('you cannot edit or delete another user rule', function () {
@@ -567,7 +567,7 @@ test('you cannot edit or delete another user rule', function () {
     $this->actingAs($this->user)
         ->patch(route('category-rules.update', $rule), [
             'name' => 'Mine', 'match_field' => 'any', 'match_type' => 'contains',
-            'match_value' => 'x', 'set_category' => 'groceries',
+            'match_values' => ['x'], 'set_category' => 'groceries',
         ])
         ->assertForbidden();
 
@@ -579,8 +579,8 @@ test('you cannot edit or delete another user rule', function () {
 });
 
 test('the rules page reports how many transactions a re-apply would change', function () {
-    /** Two the rules may change... */
-    Transaction::factory()->forAccount($this->monzo)->create(['categorised_by' => 'source']);
+    /** Two the rules may change: one a rule already filed, one unfiled... */
+    Transaction::factory()->forAccount($this->monzo)->create(['categorised_by' => 'rule']);
     Transaction::factory()->forAccount($this->monzo)->create(['categorised_by' => null]);
     /** ...and one the user owns, which they may not. */
     Transaction::factory()->forAccount($this->monzo)->create(['categorised_by' => 'user']);
@@ -593,17 +593,17 @@ test('the rules page reports how many transactions a re-apply would change', fun
 test('the reported count matches what a re-apply actually touches', function () {
     Transaction::factory()->forAccount($this->monzo)->count(3)->create([
         'name' => 'TESCO STORES',
-        'category' => 'general',
-        'categorised_by' => 'source',
+        'category' => 'trips',
+        'categorised_by' => 'rule',
     ]);
     Transaction::factory()->forAccount($this->monzo)->create([
         'name' => 'TESCO STORES',
-        'category' => 'bills',
+        'category' => 'personal_care',
         'categorised_by' => 'user',
     ]);
 
     CategoryRule::factory()->for($this->user)->create([
-        'match_value' => 'TESCO', 'set_category' => 'groceries',
+        'match_values' => ['TESCO'], 'set_category' => 'groceries',
     ]);
 
     $this->actingAs($this->user)
@@ -616,12 +616,12 @@ test('the reported count matches what a re-apply actually touches', function () 
 
     expect(Transaction::where('category', 'groceries')->count())->toBe(3);
     expect(Transaction::where('categorised_by', 'user')->first()->category)
-        ->toBe('bills');
+        ->toBe('personal_care');
 });
 
 test('deleting a rule leaves the categories it already applied alone', function () {
     $rule = CategoryRule::factory()->for($this->user)->create([
-        'match_value' => 'TESCO', 'set_category' => 'groceries',
+        'match_values' => ['TESCO'], 'set_category' => 'groceries',
     ]);
 
     $transactions = Transaction::factory()->forAccount($this->monzo)->count(3)->create([
@@ -647,4 +647,510 @@ test('deleting a rule leaves the categories it already applied alone', function 
         expect($transaction->category)->toBe('groceries');
         expect($transaction->category_rule_id)->toBeNull();
     });
+});
+
+test('a rule renames the transactions it matches', function () {
+    CategoryRule::factory()->for($this->user)->create([
+        'match_values' => ['TESCO'], 'set_category' => 'groceries', 'set_name' => 'Tesco',
+    ]);
+
+    $transaction = Transaction::factory()->forAccount($this->monzo)->make([
+        'name' => 'TESCO STORES 3297', 'category' => null,
+    ]);
+
+    app(ApplyCategoryRules::class)->handle($transaction);
+
+    expect($transaction->name)->toBe('Tesco');
+    expect($transaction->category)->toBe('groceries');
+});
+
+test('a rename leaves a name the user has edited alone', function () {
+    CategoryRule::factory()->for($this->user)->create([
+        'match_field' => 'description', 'match_values' => ['TESCO'], 'set_name' => 'Tesco',
+    ]);
+
+    $transaction = Transaction::factory()->forAccount($this->monzo)->make([
+        'name' => 'Weekly shop',
+        'description' => 'TESCO STORES 3297',
+        'overrides' => ['name' => true],
+    ]);
+
+    app(ApplyCategoryRules::class)->handle($transaction);
+
+    expect($transaction->name)->toBe('Weekly shop');
+});
+
+test('a rule may rename without setting a category', function () {
+    $this->actingAs($this->user)
+        ->from(route('category-rules.index'))
+        ->post(route('category-rules.store'), [
+            'name' => 'Tidy Tesco',
+            'match_field' => 'any',
+            'match_type' => 'contains',
+            'match_values' => ['TESCO'],
+            'set_name' => 'Tesco',
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect(CategoryRule::query()->where('name', 'Tidy Tesco')->sole()->set_name)->toBe('Tesco');
+});
+
+/**
+ * A rule's tags go through the same normalisation as a hand edited
+ * transaction's, so a rule can never invent a second spelling of a tag that
+ * already exists. See "Notes and tags are separate fields" in
+ * .ai/rules/actions-transactions.md.
+ */
+test('a rule stores its tags the one way however they were typed', function () {
+    $this->actingAs($this->user)
+        ->from(route('category-rules.index'))
+        ->post(route('category-rules.store'), [
+            'name' => 'Client dinners',
+            'match_field' => 'any',
+            'match_type' => 'contains',
+            'match_values' => ['DISHOOM'],
+            'set_tags' => ['#Work Lunch', ' billable ', 'work-lunch'],
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect(CategoryRule::query()->where('name', 'Client dinners')->sole()->set_tags)
+        ->toBe(['work-lunch', 'billable']);
+});
+
+test('a rule may set tags without setting a category', function () {
+    $this->actingAs($this->user)
+        ->from(route('category-rules.index'))
+        ->post(route('category-rules.store'), [
+            'name' => 'Tag Tesco',
+            'match_field' => 'any',
+            'match_type' => 'contains',
+            'match_values' => ['TESCO'],
+            'set_tags' => ['household'],
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect(CategoryRule::query()->where('name', 'Tag Tesco')->sole()->set_tags)->toBe(['household']);
+});
+
+/**
+ * The form sends the list on every save, so an emptied one has to clear the
+ * stored tags rather than read as "sets no tags, leave what is there".
+ */
+test('clearing a rule tags stores null and is refused on its own', function () {
+    $rule = CategoryRule::factory()->for($this->user)->create([
+        'set_category' => 'groceries',
+        'set_tags' => ['household'],
+    ]);
+
+    $this->actingAs($this->user)
+        ->from(route('category-rules.index'))
+        ->patch(route('category-rules.update', $rule), [
+            'name' => $rule->name,
+            'match_field' => 'any',
+            'match_type' => 'contains',
+            'match_values' => $rule->match_values,
+            'set_category' => 'groceries',
+            'set_tags' => [],
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect($rule->fresh()->set_tags)->toBeNull();
+
+    /** With the category gone too, the rule would apply nothing at all. */
+    $this->actingAs($this->user)
+        ->from(route('category-rules.index'))
+        ->patch(route('category-rules.update', $rule), [
+            'name' => $rule->name,
+            'match_field' => 'any',
+            'match_type' => 'contains',
+            'match_values' => $rule->match_values,
+            'set_tags' => [],
+        ])
+        ->assertSessionHasErrors('set_category');
+});
+
+test('a rule tag that is too long is rejected', function () {
+    $this->actingAs($this->user)
+        ->from(route('category-rules.index'))
+        ->post(route('category-rules.store'), [
+            'name' => 'Too long',
+            'match_field' => 'any',
+            'match_type' => 'contains',
+            'match_values' => ['TESCO'],
+            'set_tags' => [str_repeat('a', 51)],
+        ])
+        ->assertSessionHasErrors('set_tags.0');
+});
+
+/**
+ * A rule written before its tags were normalised can still hold a second
+ * spelling, so applying one folds it in rather than adding it alongside the
+ * tag the row already carries.
+ */
+test('applying a rule never adds a second spelling of a tag the row has', function () {
+    CategoryRule::factory()->for($this->user)->create([
+        'match_values' => ['TESCO'],
+        'set_category' => null,
+        'set_tags' => ['Work Lunch', 'household'],
+    ]);
+
+    $transaction = Transaction::factory()->forAccount($this->monzo)->make([
+        'name' => 'TESCO STORES', 'category' => null, 'tags' => ['work-lunch'],
+    ]);
+
+    app(ApplyCategoryRules::class)->handle($transaction);
+
+    expect($transaction->tags)->toBe(['work-lunch', 'household']);
+});
+
+test('the rules page offers every tag in use, from transactions and from rules', function () {
+    Transaction::factory()->forAccount($this->monzo)->create(['tags' => ['groceries']]);
+
+    CategoryRule::factory()->for($this->user)->create([
+        'set_category' => 'groceries',
+        'set_tags' => ['household'],
+    ]);
+
+    $this->actingAs($this->user)
+        ->get(route('category-rules.index'))
+        ->assertInertia(fn ($page) => $page->where('tags', ['groceries', 'household']));
+});
+
+test('the rules listing carries the tags', function () {
+    CategoryRule::factory()->for($this->user)->create([
+        'set_category' => 'groceries',
+        'set_tags' => ['household'],
+    ]);
+
+    $this->actingAs($this->user)
+        ->get(route('category-rules.index'))
+        ->assertInertia(fn ($page) => $page->where('rules.0.setTags', ['household']));
+});
+
+test('the rules listing carries the rename', function () {
+    CategoryRule::factory()->for($this->user)->create(['set_name' => 'Tesco']);
+
+    $this->actingAs($this->user)
+        ->get(route('category-rules.index'))
+        ->assertInertia(fn ($page) => $page->where('rules.0.setName', 'Tesco'));
+});
+
+/**
+ * The edit dialog posts the whole rule back, including the fields it did not
+ * change, so a blank optional field has to clear the stored one rather than
+ * be ignored.
+ */
+test('editing a rule clears the conditions left blank', function () {
+    $rule = CategoryRule::factory()->for($this->user)->create([
+        'amount_min_minor' => -5000,
+        'amount_max_minor' => -1000,
+        'day_of_month' => 4,
+        'account_id' => $this->amex->id,
+        'set_category' => 'groceries',
+    ]);
+
+    $this->actingAs($this->user)
+        ->patch(route('category-rules.update', $rule), [
+            'name' => $rule->name,
+            'match_field' => 'any',
+            'match_type' => 'contains',
+            'match_values' => ['tesco'],
+            'amount_min_minor' => null,
+            'amount_max_minor' => null,
+            'amount_minor' => null,
+            'day_of_month' => null,
+            'account_id' => null,
+            'set_category' => null,
+            'set_name' => 'Tesco',
+            'priority' => 0,
+            'stops_processing' => true,
+            'is_active' => true,
+        ])
+        ->assertSessionHasNoErrors();
+
+    $rule->refresh();
+
+    expect($rule->amount_min_minor)->toBeNull();
+    expect($rule->amount_max_minor)->toBeNull();
+    expect($rule->day_of_month)->toBeNull();
+    expect($rule->account_id)->toBeNull();
+    expect($rule->set_category)->toBeNull();
+    expect($rule->set_name)->toBe('Tesco');
+});
+
+/** The dialog sends the rule's current state back, so an off rule stays off. */
+test('editing an inactive rule leaves it inactive', function () {
+    $rule = CategoryRule::factory()->for($this->user)->inactive()->create([
+        'set_category' => 'groceries',
+    ]);
+
+    $this->actingAs($this->user)
+        ->patch(route('category-rules.update', $rule), [
+            'name' => 'Renamed',
+            'match_field' => 'any',
+            'match_type' => 'contains',
+            'match_values' => ['tesco'],
+            'set_category' => 'groceries',
+            'stops_processing' => $rule->stops_processing,
+            'is_active' => false,
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect($rule->fresh()->is_active)->toBeFalse();
+    expect($rule->fresh()->name)->toBe('Renamed');
+});
+
+test('unchecking stop processing is saved', function () {
+    $rule = CategoryRule::factory()->for($this->user)->create([
+        'stops_processing' => true, 'set_category' => 'groceries',
+    ]);
+
+    $this->actingAs($this->user)
+        ->patch(route('category-rules.update', $rule), [
+            'name' => $rule->name,
+            'match_field' => 'any',
+            'match_type' => 'contains',
+            'match_values' => ['tesco'],
+            'set_category' => 'groceries',
+            'stops_processing' => false,
+            'is_active' => true,
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect($rule->fresh()->stops_processing)->toBeFalse();
+});
+
+test('applying one rule runs that rule and no other', function () {
+    $tesco = CategoryRule::factory()->for($this->user)->create([
+        'match_values' => ['TESCO'], 'set_category' => 'groceries',
+    ]);
+    CategoryRule::factory()->for($this->user)->create([
+        'match_values' => ['TFL'], 'set_category' => 'transport',
+    ]);
+
+    $groceries = Transaction::factory()->forAccount($this->monzo)->create([
+        'name' => 'TESCO STORES', 'category' => null, 'categorised_by' => null,
+    ]);
+    $travel = Transaction::factory()->forAccount($this->monzo)->create([
+        'name' => 'TFL TRAVEL CHARGE', 'category' => null, 'categorised_by' => null,
+    ]);
+
+    $this->actingAs($this->user)
+        ->from(route('category-rules.index'))
+        ->post(route('category-rules.apply-one', $tesco))
+        ->assertSessionHasNoErrors();
+
+    expect($groceries->fresh()->category)->toBe('groceries');
+    expect($travel->fresh()->category)->toBeNull();
+});
+
+test('applying one rule reaches rows another rule already categorised', function () {
+    $rule = CategoryRule::factory()->for($this->user)->create([
+        'match_values' => ['Purpleport'],
+        'set_category' => null,
+        'set_tags' => ['reverie'],
+    ]);
+
+    $transaction = Transaction::factory()->forAccount($this->monzo)->create([
+        'name' => 'Purpleport',
+        'category' => 'subscriptions',
+        'categorised_by' => 'rule',
+        'tags' => null,
+    ]);
+
+    $this->actingAs($this->user)
+        ->from(route('category-rules.index'))
+        ->post(route('category-rules.apply-one', $rule));
+
+    expect($transaction->fresh()->tags)->toBe(['reverie']);
+    expect($transaction->fresh()->category)->toBe('subscriptions');
+});
+
+test('applying one rule leaves a category set by hand alone', function () {
+    $rule = CategoryRule::factory()->for($this->user)->create([
+        'match_values' => ['TESCO'], 'set_category' => 'groceries',
+    ]);
+
+    $byHand = Transaction::factory()->forAccount($this->monzo)->create([
+        'name' => 'TESCO STORES',
+        'category' => 'personal_care',
+        'categorised_by' => 'user',
+        'overrides' => ['category' => true],
+    ]);
+
+    $this->actingAs($this->user)
+        ->from(route('category-rules.index'))
+        ->post(route('category-rules.apply-one', $rule));
+
+    expect($byHand->fresh()->category)->toBe('personal_care');
+});
+
+test('one user cannot apply another user\'s rule', function () {
+    $stranger = User::factory()->create();
+    $rule = CategoryRule::factory()->for($stranger)->create([
+        'match_values' => ['TESCO'], 'set_category' => 'groceries',
+    ]);
+
+    $this->actingAs($this->user)
+        ->from(route('category-rules.index'))
+        ->post(route('category-rules.apply-one', $rule))
+        ->assertForbidden();
+});
+
+test('the rules page no longer offers an uncategorised-only pass', function () {
+    $this->actingAs($this->user)
+        ->get(route('category-rules.index'))
+        ->assertInertia(fn ($page) => $page->missing('uncategorisedCount'));
+});
+
+test('a rule matches on any of the strings it looks for', function () {
+    $rule = CategoryRule::factory()->for($this->user)->make([
+        'match_field' => 'any',
+        'match_type' => 'contains',
+        'match_values' => ['TESCO', 'SAINSBURY', 'LIDL'],
+    ]);
+
+    $middle = Transaction::factory()->forAccount($this->monzo)->make([
+        'name' => "SAINSBURY'S LOCAL", 'description' => null, 'merchant_name' => null,
+    ]);
+    $last = Transaction::factory()->forAccount($this->monzo)->make([
+        'name' => 'LIDL GB BECKENHAM', 'description' => null, 'merchant_name' => null,
+    ]);
+    $neither = Transaction::factory()->forAccount($this->monzo)->make([
+        'name' => 'CAFFE NERO', 'description' => null, 'merchant_name' => null,
+    ]);
+
+    expect($rule->matches($middle))->toBeTrue()
+        ->and($rule->matches($last))->toBeTrue()
+        ->and($rule->matches($neither))->toBeFalse();
+});
+
+/** Every string is read the same way, so the match type applies to all of them. */
+test('the match type applies to every string a rule looks for', function () {
+    $rule = CategoryRule::factory()->for($this->user)->make([
+        'match_type' => 'starts_with',
+        'match_values' => ['TESCO', 'LIDL'],
+    ]);
+
+    $starts = Transaction::factory()->forAccount($this->monzo)->make([
+        'name' => 'LIDL GB BECKENHAM', 'description' => null, 'merchant_name' => null,
+    ]);
+    $contains = Transaction::factory()->forAccount($this->monzo)->make([
+        'name' => 'PAYMENT TO LIDL GB', 'description' => null, 'merchant_name' => null,
+    ]);
+
+    expect($rule->matches($starts))->toBeTrue()
+        ->and($rule->matches($contains))->toBeFalse();
+});
+
+test('a rule can be saved with several strings to look for', function () {
+    $this->actingAs($this->user)
+        ->post(route('category-rules.store'), [
+            'name' => 'Supermarkets',
+            'match_field' => 'any',
+            'match_type' => 'contains',
+            'match_values' => ['tesco', 'sainsbury', 'lidl'],
+            'set_category' => 'groceries',
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect(CategoryRule::first()->match_values)->toBe(['tesco', 'sainsbury', 'lidl']);
+});
+
+/**
+ * The form sends a box the user added and then left alone as an empty string,
+ * which asks for nothing and so is dropped rather than reported.
+ */
+test('blank boxes and repeats are dropped when a rule is saved', function () {
+    $this->actingAs($this->user)
+        ->post(route('category-rules.store'), [
+            'name' => 'Supermarkets',
+            'match_field' => 'any',
+            'match_type' => 'contains',
+            'match_values' => ['  tesco  ', '', 'lidl', 'tesco', '   '],
+            'set_category' => 'groceries',
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect(CategoryRule::first()->match_values)->toBe(['tesco', 'lidl']);
+});
+
+test('a rule with nothing to look for is rejected', function () {
+    $this->actingAs($this->user)
+        ->post(route('category-rules.store'), [
+            'name' => 'Looks for nothing',
+            'match_field' => 'any',
+            'match_type' => 'contains',
+            'match_values' => ['', '  '],
+            'set_category' => 'groceries',
+        ])
+        ->assertSessionHasErrors('match_values');
+
+    expect(CategoryRule::count())->toBe(0);
+});
+
+/** The error has to land on the box that holds the broken pattern. */
+test('an invalid regular expression is reported against its own box', function () {
+    $this->actingAs($this->user)
+        ->post(route('category-rules.store'), [
+            'name' => 'Broken',
+            'match_field' => 'any',
+            'match_type' => 'regex',
+            'match_values' => ['^tesco', '([unclosed'],
+            'set_category' => 'groceries',
+        ])
+        ->assertSessionHasErrors('match_values.1')
+        ->assertSessionDoesntHaveErrors('match_values.0');
+});
+
+test('editing a rule can add a string to the ones it looks for', function () {
+    $rule = CategoryRule::factory()->for($this->user)->create([
+        'match_values' => ['tesco'],
+        'set_category' => 'groceries',
+    ]);
+
+    $this->actingAs($this->user)
+        ->patch(route('category-rules.update', $rule), [
+            'name' => $rule->name,
+            'match_field' => 'any',
+            'match_type' => 'contains',
+            'match_values' => ['tesco', 'lidl'],
+            'set_category' => 'groceries',
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect($rule->fresh()->match_values)->toBe(['tesco', 'lidl']);
+});
+
+test('the rules listing carries every string a rule looks for', function () {
+    CategoryRule::factory()->for($this->user)->create([
+        'match_values' => ['tesco', 'lidl'],
+    ]);
+
+    $this->actingAs($this->user)
+        ->get(route('category-rules.index'))
+        ->assertInertia(fn ($page) => $page->where('rules.0.matchValues', ['tesco', 'lidl']));
+});
+
+/** A row matched by the second string is counted the same as one matched by the first. */
+test('the match count covers every string a rule looks for', function () {
+    $rule = CategoryRule::factory()->for($this->user)->create([
+        'match_values' => ['TESCO', 'LIDL'],
+    ]);
+
+    foreach (['TESCO STORES', 'LIDL GB', 'CAFFE NERO'] as $name) {
+        Transaction::factory()->forAccount($this->monzo)->create([
+            'user_id' => $this->user->id,
+            'name' => $name,
+            'description' => null,
+            'merchant_name' => null,
+        ]);
+    }
+
+    $counts = collect($this->actingAs($this->user)
+        ->get(route('category-rules.index'))
+        ->viewData('page')['props']['rules'])
+        ->pluck('matchCount', 'id');
+
+    expect($counts[$rule->id])->toBe(2);
 });

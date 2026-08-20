@@ -33,14 +33,14 @@ test('grouping by category totals each category', function () {
         'category' => 'groceries', 'amount_minor' => -1500,
     ]);
     Transaction::factory()->forAccount($this->monzo)->create([
-        'category' => 'bills', 'amount_minor' => -8000,
+        'category' => 'personal_care', 'amount_minor' => -8000,
     ]);
 
     $subtotals = query($this->user, ['group_by' => 'category'])->groupSubtotals();
 
     expect($subtotals['groceries']['count'])->toBe(2);
     expect($subtotals['groceries']['moneyOut'])->toBe(3000);
-    expect($subtotals['bills']['moneyOut'])->toBe(8000);
+    expect($subtotals['personal_care']['moneyOut'])->toBe(8000);
 });
 
 test('a transfer adds nothing to its group subtotal, so the subtotals still add up to the month', function () {
@@ -62,13 +62,13 @@ test('grouping by category gives the transfers group a count but no money', func
         'amount_minor' => -6000,
     ]);
     Transaction::factory()->forAccount($this->monzo)->create([
-        'category' => 'bills', 'amount_minor' => -8000,
+        'category' => 'personal_care', 'amount_minor' => -8000,
     ]);
 
     $subtotals = query($this->user, ['group_by' => 'category'])->groupSubtotals();
 
     expect($subtotals['transfers'])->toBe(['count' => 2, 'moneyIn' => 0, 'moneyOut' => 0, 'net' => 0]);
-    expect($subtotals['bills']['moneyOut'])->toBe(8000);
+    expect($subtotals['personal_care']['moneyOut'])->toBe(8000);
 });
 
 test('grouping by account keys on the account id', function () {

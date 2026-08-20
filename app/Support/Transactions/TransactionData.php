@@ -26,7 +26,6 @@ readonly class TransactionData
         public string $currency,
         public ?string $name = null,
         public ?string $description = null,
-        public ?string $category = null,
         public ?string $type = null,
         public ?string $merchantName = null,
         public ?string $notes = null,
@@ -34,9 +33,9 @@ readonly class TransactionData
     ) {}
 
     /**
-     * The bank-truth attributes, ready to be merged into a model. Identity and
-     * local state are deliberately absent so an import can never write over
-     * them.
+     * The bank-truth attributes, ready to be merged into a model. Identity,
+     * local state and the category are deliberately absent so an import can
+     * never write over them.
      *
      * @return array<string, mixed>
      */
@@ -48,7 +47,6 @@ readonly class TransactionData
             'currency' => $this->currency,
             'name' => $this->name,
             'description' => $this->description,
-            'category' => $this->category,
             'type' => $this->type,
             'merchant_name' => $this->merchantName,
             'notes' => $this->notes,
@@ -70,6 +68,10 @@ readonly class TransactionData
     /**
      * Build from a Monzo API transaction object, with the merchant expanded.
      *
+     * Monzo's own `category` is read and discarded along with everything else
+     * this app does not carry. A transaction is filed by the user's rules or
+     * by hand, never by the bank.
+     *
      * @param  array<string, mixed>  $payload
      */
     public static function fromMonzo(array $payload): self
@@ -82,12 +84,6 @@ readonly class TransactionData
 
         $counterpartyName = $counterparty['preferred_name'] ?? $counterparty['name'] ?? null;
 
-        /**
-         * Stored exactly as Monzo sends it. A custom category arrives as an
-         * opaque id, which is the only stable handle there is: Monzo will not
-         * tell a third party client what the user named it.
-         */
-        $category = self::stringOrNull($payload['category'] ?? null);
         $description = self::stringOrNull($payload['description'] ?? null);
 
         return new self(
@@ -104,7 +100,6 @@ readonly class TransactionData
                 ?? self::stringOrNull(is_string($counterpartyName) ? $counterpartyName : null)
                 ?? $description,
             description: $description,
-            category: $category,
             type: self::schemeToType(self::stringOrNull($payload['scheme'] ?? null), $payload),
             merchantName: self::stringOrNull($merchant['name'] ?? null),
             notes: $notes,
@@ -116,6 +111,10 @@ readonly class TransactionData
      * Monzo's notes field doubles as a tag store: any "#word" in a note is
      * lifted out as a tag. AMEX notes are read the same way.
      *
+     * This is the bank's own convention, applied to the note the bank sent. A
+     * note the user edits by hand is left as prose; tags are edited in their
+     * own field from there on.
+     *
      * @return array<int, string>|null
      */
     public static function parseTags(?string $notes): ?array
@@ -126,12 +125,42 @@ readonly class TransactionData
 
         preg_match_all('/#([\p{L}\p{N}_-]+)/u', $notes, $matches);
 
-        $tags = array_values(array_unique(array_map(
-            fn (string $tag): string => mb_strtolower($tag),
-            $matches[1],
+        return self::normaliseTags($matches[1]);
+    }
+
+    /**
+     * A list of tags in the one shape the app stores, keeping order and
+     * dropping anything that normalises away to nothing.
+     *
+     * Empty comes back as null rather than [], so a row with no tags reads the
+     * same however it was written; the facets query looks for a null.
+     *
+     * @param  array<int, string>  $tags
+     * @return array<int, string>|null
+     */
+    public static function normaliseTags(array $tags): ?array
+    {
+        $normalised = array_values(array_unique(array_filter(
+            array_map(self::normaliseTag(...), $tags),
+            fn (string $tag): bool => $tag !== '',
         )));
 
-        return $tags === [] ? null : $tags;
+        return $normalised === [] ? null : $normalised;
+    }
+
+    /**
+     * One tag as it is stored: the single word that would follow a "#". The
+     * leading hashes go, runs of whitespace become hyphens so a phrase stays
+     * one tag, anything else that cannot appear in a tag is dropped, and the
+     * rest is lower cased.
+     *
+     * Mirrored by normaliseTag in components/transactions/tag-input.tsx.
+     */
+    public static function normaliseTag(string $tag): string
+    {
+        $tag = preg_replace('/\s+/u', '-', trim(ltrim(trim($tag), '#'))) ?? '';
+
+        return mb_strtolower(preg_replace('/[^\p{L}\p{N}_-]+/u', '', $tag) ?? '');
     }
 
     /**

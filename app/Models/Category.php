@@ -15,13 +15,16 @@ use Illuminate\Support\Str;
 /**
  * A category a transaction can be filed under, owned by one user.
  *
- * The value is what `transactions.category` stores and is whatever Monzo
- * sends, so it survives a re-sync. The label is only for display, which is
- * what makes a custom category usable: Monzo sends those as an opaque id and
- * will not tell a third party client their names, so the user supplies one.
+ * Categorisation is entirely this app's own: no bank's categories are read.
+ * The value is the stable handle `transactions.category` stores, and the
+ * label is only for display, so a category can be renamed without touching
+ * a single transaction.
  *
- * A category made here rather than in the Monzo app has no bank handle at all,
- * so its value is built from its name behind a `custom_` prefix.
+ * Every category is one the user owns. A new account starts with the set
+ * below to save filling it in from nothing, and one the user adds gets a
+ * value built from its name.
+ *
+ * php artisan transactions:clear-categories
  *
  * @property int $id
  * @property int $user_id
@@ -42,9 +45,6 @@ class Category extends Model
     /** @use HasFactory<CategoryFactory> */
     use HasFactory;
 
-    /** Marks a value this app invented, so the page can say where it came from. */
-    public const CUSTOM_PREFIX = 'custom_';
-
     /**
      * Categories whose money is held out of every total.
      *
@@ -61,57 +61,51 @@ class Category extends Model
     ];
 
     /**
-     * Monzo's built-in categories and the names it shows them under. Every
-     * user starts with these; anything else is one of their own.
+     * The categories a new account starts with, and the names they are shown
+     * under. This is the set the user actually files things under; anything
+     * else is one they added afterwards.
      *
      * @var array<string, string>
      */
-    public const MONZO_DEFAULTS = [
-        'general' => 'General',
-        'eating_out' => 'Eating out',
-        'expenses' => 'Expenses',
-        'transport' => 'Transport',
-        'cash' => 'Cash',
+    public const DEFAULTS = [
         'bills' => 'Bills',
-        'entertainment' => 'Entertainment',
-        'shopping' => 'Shopping',
-        'holidays' => 'Holidays',
+        'dating' => 'Dating',
+        'eating_out' => 'Eating out',
         'groceries' => 'Groceries',
+        'holiday' => 'Holidays',
+        'james' => 'James',
+        'mum' => 'Mum',
         'personal_care' => 'Personal care',
-        'family' => 'Family',
-        'finances' => 'Finances',
-        'savings' => 'Savings',
-        'charity' => 'Charity',
-        'gifts' => 'Gifts',
+        'social' => 'Social',
+        'subscriptions' => 'Subscriptions',
         'transfers' => 'Transfers',
-        'income' => 'Income',
+        'transport' => 'Transport',
+        'trips' => 'Trips',
     ];
 
     /**
-     * Make sure a category exists for a value arriving from a sync, so one
-     * the user created in the Monzo app shows up here rather than reading as
-     * uncategorised. Its id stands in as the name until the user renames it.
+     * Make sure a category exists for a value, so a transaction already
+     * filed under it has something to display. The value stands in as the
+     * name for anything not in the starting set.
      */
     public static function ensure(int $userId, string $value): self
     {
         return self::query()->firstOrCreate(
             ['user_id' => $userId, 'value' => $value],
-            ['label' => self::MONZO_DEFAULTS[$value] ?? $value],
+            ['label' => self::DEFAULTS[$value] ?? $value],
         );
     }
 
     /**
-     * Create a category the user asked for here rather than in the Monzo app.
-     * No sync will ever send this value, so it is built from the name to stay
-     * readable, and prefixed to keep it clear of both Monzo's own values and
-     * the `category_` ids Monzo gives the ones made in its app.
+     * Create a category the user asked for. Its value is built from the name
+     * so it stays readable.
      */
     public static function createCustom(int $userId, string $label): self
     {
         $slug = Str::slug($label, '_');
 
         /** A name with no latin characters slugs to nothing. */
-        $base = self::CUSTOM_PREFIX.($slug !== '' ? $slug : Str::lower(Str::random(8)));
+        $base = $slug !== '' ? $slug : Str::lower(Str::random(8));
 
         /**
          * Two different names can slug the same way, so step past anything
@@ -133,11 +127,11 @@ class Category extends Model
     }
 
     /**
-     * Seed the built-in set for a user who has none yet.
+     * Seed the starting set for a user who has none yet.
      */
     public static function seedDefaults(int $userId): void
     {
-        foreach (self::MONZO_DEFAULTS as $value => $label) {
+        foreach (self::DEFAULTS as $value => $label) {
             self::ensure($userId, $value);
         }
     }
@@ -174,7 +168,7 @@ class Category extends Model
 
     /**
      * Transactions filed under this category. Joined on the stored value
-     * rather than an id, because that value is what the bank sends.
+     * rather than an id, so renaming a category leaves every row alone.
      *
      * @return HasMany<Transaction, $this>
      */

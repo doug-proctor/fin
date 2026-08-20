@@ -14,7 +14,7 @@ use Illuminate\Support\Carbon;
  *
  * The caller decides how far back to reach. Every run re-reads its whole
  * span rather than starting where the last one stopped, so a row whose
- * category or merchant changed at the bank is corrected here. At a few
+ * merchant or description changed at the bank is corrected here. At a few
  * hundred transactions that is three requests instead of one, and it removes
  * any way for a stored row to drift and never be looked at again.
  *

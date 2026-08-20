@@ -9,9 +9,9 @@ beforeEach(function () {
     $this->user = User::factory()->create();
 });
 
-test('a new user starts with monzo built-in categories', function () {
+test('a new user starts with the default categories', function () {
     expect(Category::where('user_id', $this->user->id)->count())
-        ->toBe(count(Category::MONZO_DEFAULTS));
+        ->toBe(count(Category::DEFAULTS));
 
     expect(Category::where('user_id', $this->user->id)->where('value', 'groceries')->value('label'))
         ->toBe('Groceries');
@@ -41,7 +41,7 @@ test('a category can be renamed and the new name reaches the table', function ()
 
     expect($category->fresh()->label)->toBe('Food shopping');
 
-    /** The stored value is untouched, so a re-sync still matches the row. */
+    /** The stored value is untouched, so every filed row still matches. */
     expect($category->fresh()->value)->toBe('groceries');
 
     $this->actingAs($this->user)
@@ -52,27 +52,17 @@ test('a category can be renamed and the new name reaches the table', function ()
 
 test('one user cannot rename another user category', function () {
     $other = User::factory()->create();
-    $category = Category::where('user_id', $other->id)->where('value', 'bills')->first();
+    $category = Category::where('user_id', $other->id)->where('value', 'personal_care')->first();
 
     $this->actingAs($this->user)
         ->patch(route('categories.update', $category), ['label' => 'Hijacked'])
         ->assertForbidden();
 
-    expect($category->fresh()->label)->toBe('Bills');
-});
-
-test('a category with no name yet is flagged for the user to name', function () {
-    Category::ensure($this->user->id, 'category_0000B86WnKknuzF8vd1v9g');
-
-    $this->actingAs($this->user)
-        ->get(route('categories.index'))
-        ->assertInertia(fn ($page) => $page
-            ->where('categories', fn ($categories) => collect($categories)
-                ->firstWhere('value', 'category_0000B86WnKknuzF8vd1v9g')['isUnnamed'] === true));
+    expect($category->fresh()->label)->toBe('Personal care');
 });
 
 test('a category cannot be renamed to nothing', function () {
-    $category = Category::where('user_id', $this->user->id)->where('value', 'bills')->first();
+    $category = Category::where('user_id', $this->user->id)->where('value', 'personal_care')->first();
 
     $this->actingAs($this->user)
         ->patch(route('categories.update', $category), ['label' => ''])
@@ -88,8 +78,8 @@ test('a category can be created and gets a value of its own', function () {
 
     expect($category)->not->toBeNull();
 
-    /** No sync will send this value, so it is built from the name. */
-    expect($category->value)->toBe('custom_coffee');
+    /** Built from the name, so the stored handle stays readable. */
+    expect($category->value)->toBe('coffee');
 });
 
 test('a category created here can be used to categorise a transaction', function () {
@@ -99,10 +89,10 @@ test('a category created here can be used to categorise a transaction', function
     $this->actingAs($this->user)->post(route('categories.store'), ['label' => 'Coffee']);
 
     $this->actingAs($this->user)
-        ->patch(route('transactions.update', $transaction), ['category' => 'custom_coffee'])
+        ->patch(route('transactions.update', $transaction), ['category' => 'coffee'])
         ->assertRedirect();
 
-    expect($transaction->fresh()->category)->toBe('custom_coffee');
+    expect($transaction->fresh()->category)->toBe('coffee');
 });
 
 test('a category cannot be created with a name already in use', function () {
@@ -122,25 +112,26 @@ test('a category cannot be created without a name', function () {
 
 test('two names that read the same way still get separate values', function () {
     /*
-     * Both slug to custom_eating_in, which the unique index would reject, so
+     * Both slug to eating_in, which the unique index would reject, so
      * the second is stepped past rather than colliding.
      */
     $this->actingAs($this->user)->post(route('categories.store'), ['label' => 'Eating in']);
     $this->actingAs($this->user)->post(route('categories.store'), ['label' => 'Eating In!']);
 
     expect(Category::where('user_id', $this->user->id)->where('label', 'Eating in')->value('value'))
-        ->toBe('custom_eating_in');
+        ->toBe('eating_in');
 
     expect(Category::where('user_id', $this->user->id)->where('label', 'Eating In!')->value('value'))
-        ->toBe('custom_eating_in_2');
+        ->toBe('eating_in_2');
 });
 
-test('a category created here is listed as the user own', function () {
+test('a category created here is listed alongside the default ones', function () {
     $this->actingAs($this->user)->post(route('categories.store'), ['label' => 'Coffee']);
 
     $this->actingAs($this->user)
         ->get(route('categories.index'))
+        ->assertOk()
         ->assertInertia(fn ($page) => $page
             ->where('categories', fn ($categories) => collect($categories)
-                ->firstWhere('value', 'custom_coffee')['isUnnamed'] === false));
+                ->firstWhere('value', 'coffee')['label'] === 'Coffee'));
 });

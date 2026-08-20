@@ -38,7 +38,7 @@ class CategoryRuleController extends Controller
                     'name' => $rule->name,
                     'matchField' => $rule->match_field,
                     'matchType' => $rule->match_type,
-                    'matchValue' => $rule->match_value,
+                    'matchValues' => $rule->match_values ?? [],
                     'accountId' => $rule->account_id,
                     'amountMinMinor' => $rule->amount_min_minor,
                     'amountMaxMinor' => $rule->amount_max_minor,
@@ -48,6 +48,7 @@ class CategoryRuleController extends Controller
                     'setCategoryLabel' => $rule->set_category === null
                         ? null
                         : ($labels[$rule->set_category] ?? $rule->set_category),
+                    'setName' => $rule->set_name,
                     'setTags' => $rule->set_tags ?? [],
                     'priority' => $rule->priority,
                     'stopsProcessing' => $rule->stops_processing,
@@ -61,12 +62,15 @@ class CategoryRuleController extends Controller
                 ->get(['id', 'name'])
                 ->all(),
             'categories' => $this->categoryOptions($request->user()->id),
+            /**
+             * What the rule form's tag field offers. The tags already in use
+             * on transactions, plus the ones only a rule sets so far — a rule
+             * that has not run yet, or that matches nothing, still has its tag
+             * offered to the next rule rather than inviting a second spelling.
+             */
+            'tags' => $this->tagOptions($user->id, $rules),
             'matchFields' => CategoryRule::MATCH_FIELDS,
             'matchTypes' => CategoryRule::MATCH_TYPES,
-            'uncategorisedCount' => Transaction::query()
-                ->where('user_id', $user->id)
-                ->whereNull('category')
-                ->count(),
             /**
              * How many rows a re-apply could change: everything except the
              * ones categorised by hand, which the rules never touch.
@@ -118,19 +122,9 @@ class CategoryRuleController extends Controller
      */
     public function apply(Request $request, ApplyCategoryRules $applyCategoryRules): RedirectResponse
     {
-        $onlyUncategorised = $request->boolean('only_uncategorised', true);
-
         $applyCategoryRules->flush();
 
-        $changed = 0;
-
-        Transaction::query()
-            ->where('user_id', $request->user()->id)
-            ->where($this->notCategorisedByHand(...))
-            ->when($onlyUncategorised, fn ($query) => $query->whereNull('category'))
-            ->chunkById(500, function ($transactions) use ($applyCategoryRules, &$changed): void {
-                $changed += $applyCategoryRules->handleMany($transactions);
-            });
+        $changed = $this->run($request->user()->id, $applyCategoryRules);
 
         Inertia::flash('toast', [
             'type' => 'success',
@@ -142,6 +136,72 @@ class CategoryRuleController extends Controller
         ]);
 
         return back();
+    }
+
+    /**
+     * Run one rule, and only that rule, back over transactions already stored.
+     *
+     * Same policy as a full re-apply: rows the user categorised by hand are
+     * left alone, and a field the user has taken ownership of is never written
+     * over. Whether the rule is switched on is not consulted — the user asked
+     * for this rule by name.
+     */
+    public function applyOne(
+        Request $request,
+        CategoryRule $categoryRule,
+        ApplyCategoryRules $applyCategoryRules,
+    ): RedirectResponse {
+        abort_unless($categoryRule->user_id === $request->user()->id, 403);
+
+        $changed = $this->run($request->user()->id, $applyCategoryRules, $categoryRule);
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => trans_choice(
+                '{0}No transactions matched this rule.|[1,*]:count transactions changed.',
+                $changed,
+                ['count' => $changed],
+            ),
+        ]);
+
+        return back();
+    }
+
+    /**
+     * One pass of the rules over every row they are allowed to change.
+     *
+     * @param  CategoryRule|null  $only  Run just this rule, ignoring the rest.
+     * @return int The number of transactions changed.
+     */
+    private function run(int $userId, ApplyCategoryRules $applyCategoryRules, ?CategoryRule $only = null): int
+    {
+        $changed = 0;
+
+        Transaction::query()
+            ->where('user_id', $userId)
+            ->where($this->notCategorisedByHand(...))
+            ->chunkById(500, function ($transactions) use ($applyCategoryRules, $only, &$changed): void {
+                $changed += $applyCategoryRules->handleMany($transactions, $only);
+            });
+
+        return $changed;
+    }
+
+    /**
+     * Every tag the tag field should suggest: those in use on transactions,
+     * plus those any rule sets.
+     *
+     * @param  Collection<int, CategoryRule>  $rules
+     * @return array<int, string>
+     */
+    private function tagOptions(int $userId, Collection $rules): array
+    {
+        return collect(Transaction::tagsFor($userId))
+            ->merge($rules->flatMap(fn (CategoryRule $rule): array => $rule->set_tags ?? []))
+            ->unique()
+            ->sort()
+            ->values()
+            ->all();
     }
 
     /**

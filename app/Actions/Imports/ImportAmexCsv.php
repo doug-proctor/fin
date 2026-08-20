@@ -176,12 +176,6 @@ class ImportAmexCsv
             currency: $account->currency,
             name: $this->merchantName($description),
             description: $description,
-            /**
-             * Deliberately left uncategorised. AMEX uses its own two-part
-             * taxonomy, and translating it onto Monzo's categories guessed
-             * wrong often enough to be worse than saying nothing.
-             */
-            category: null,
             type: 'card_payment',
             merchantName: $this->merchantName($description),
             notes: $extendedDetails,

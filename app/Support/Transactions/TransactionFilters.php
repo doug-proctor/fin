@@ -64,6 +64,8 @@ readonly class TransactionFilters
         public ?string $search = null,
         public array $tags = [],
         public array $types = [],
+        /** Narrows the table to rows the user has not marked off yet. */
+        public bool $unprocessed = false,
         public string $sort = 'date',
         public string $sortDirection = 'desc',
         public string $groupBy = 'none',
@@ -90,6 +92,7 @@ readonly class TransactionFilters
             search: self::stringOrNull($input['search'] ?? null),
             tags: self::arrayOf($input['tags'] ?? null),
             types: self::arrayOf($input['types'] ?? null),
+            unprocessed: self::boolean($input['unprocessed'] ?? null),
             sort: self::oneOf($input['sort'] ?? null, array_keys(self::SORTS), 'date'),
             sortDirection: self::oneOf($input['sort_direction'] ?? null, ['asc', 'desc'], 'desc'),
             groupBy: self::oneOf($input['group_by'] ?? null, self::GROUPS, 'none'),
@@ -191,6 +194,7 @@ readonly class TransactionFilters
             'search' => $this->search,
             'tags' => $this->tags ?: null,
             'types' => $this->types ?: null,
+            'unprocessed' => $this->unprocessed ?: null,
             'sort' => $this->sort === 'date' ? null : $this->sort,
             'sort_direction' => $this->sortDirection === 'desc' ? null : $this->sortDirection,
             'group_by' => $this->groupBy === 'none' ? null : $this->groupBy,
@@ -270,6 +274,16 @@ readonly class TransactionFilters
             array_map(fn (mixed $item): string => trim((string) $item), $value),
             fn (string $item): bool => $item !== '',
         ));
+    }
+
+    /**
+     * A checkbox arrives as the string "true" from the query string and as a
+     * real bool on a round trip through toQuery(), so both have to read the
+     * same way.
+     */
+    private static function boolean(mixed $value): bool
+    {
+        return filter_var($value, FILTER_VALIDATE_BOOL, FILTER_NULL_ON_FAILURE) === true;
     }
 
     private static function stringOrNull(mixed $value): ?string

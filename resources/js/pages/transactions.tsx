@@ -3,6 +3,7 @@ import { RefreshCw } from 'lucide-react';
 import { useState } from 'react';
 import { ImportAmexDialog } from '@/components/transactions/import-amex-dialog';
 import type { ImportResult } from '@/components/transactions/import-amex-dialog';
+import { MarkMonthProcessedDialog } from '@/components/transactions/mark-month-processed-dialog';
 import { TransactionEditDialog } from '@/components/transactions/transaction-edit-dialog';
 import { TransactionsFilterBar } from '@/components/transactions/transactions-filter-bar';
 import type { MonthNav } from '@/components/transactions/transactions-month-nav';
@@ -29,6 +30,8 @@ import type {
 interface Props {
     transactions: TransactionRow[];
     month: MonthNav;
+    /** Rows in the month on screen not marked off yet, ignoring the filters. */
+    unprocessedCount: number;
     summary: Totals;
     subtotals: Record<string, Totals>;
     filters: TransactionFilterState;
@@ -44,6 +47,7 @@ interface Props {
 export default function TransactionsIndex({
     transactions,
     month,
+    unprocessedCount,
     summary,
     subtotals,
     filters,
@@ -103,6 +107,11 @@ export default function TransactionsIndex({
                     />
 
                     <div className="ml-auto flex flex-wrap gap-2">
+                        <MarkMonthProcessedDialog
+                            month={month}
+                            unprocessedCount={unprocessedCount}
+                        />
+
                         {monzoConnected && (
                             <Form
                                 {...syncMonzo.form()}
@@ -160,6 +169,7 @@ export default function TransactionsIndex({
             <TransactionEditDialog
                 transaction={editing}
                 categories={options.categories}
+                tags={facets.tags}
                 onClose={() => setEditingId(null)}
             />
         </>

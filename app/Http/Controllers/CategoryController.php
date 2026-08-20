@@ -35,11 +35,6 @@ class CategoryController extends Controller
                     'value' => $category->value,
                     'label' => $category->label,
                     'count' => (int) ($counts[$category->value] ?? 0),
-                    /**
-                     * Monzo prefixes its own ids; a value that still reads
-                     * like one has never been given a name.
-                     */
-                    'isUnnamed' => $category->label === $category->value,
                 ])
                 ->all(),
         ]);

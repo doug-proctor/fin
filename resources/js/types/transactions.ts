@@ -36,6 +36,8 @@ export interface TransactionRow {
     accountName: string | null;
     accountProvider: string | null;
     categorisedBy: string | null;
+    /** False until the user has reviewed the row and marked it off. */
+    processed: boolean;
     /** True when the row's value is deliberately left out of every total. */
     excludedFromTotals: boolean;
     overriddenFields: string[];
@@ -82,6 +84,7 @@ export interface TransactionFilterState {
     search?: string;
     tags?: string[];
     types?: string[];
+    unprocessed?: boolean;
     sort?: SortKey;
     sort_direction?: SortDirection;
     group_by?: GroupBy;

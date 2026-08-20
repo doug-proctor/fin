@@ -21,6 +21,12 @@ test('an amex export is imported into the same table as monzo rows', function ()
     expect(Transaction::count())->toBe(4);
 });
 
+test('every imported row starts unprocessed', function () {
+    importFixture($this->amex, 'amex-activity.csv');
+
+    expect(Transaction::where('processed', false)->count())->toBe(4);
+});
+
 test('a charge becomes money out and a payment becomes money in', function () {
     importFixture($this->amex, 'amex-activity.csv');
 
@@ -295,10 +301,7 @@ test('imports are scoped to the signed in user', function () {
 test('amex rows arrive uncategorised rather than guessed at', function () {
     importFixture($this->amex, 'amex-activity.csv');
 
-    /**
-     * AMEX has its own two-part taxonomy and translating it onto Monzo's
-     * categories was wrong often enough to be worse than saying nothing.
-     */
+    /** No source is trusted to file a row; only a rule or the user can. */
     expect(Transaction::whereNotNull('category')->count())->toBe(0);
     expect(Transaction::count())->toBe(4);
 

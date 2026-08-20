@@ -15,7 +15,7 @@ beforeEach(function () {
 test('editing a field records it as an override', function () {
     $transaction = Transaction::factory()->forAccount($this->account)->create([
         'name' => 'TESCO STORES',
-        'category' => 'general',
+        'category' => 'trips',
     ]);
 
     $this->actingAs($this->user)
@@ -96,7 +96,7 @@ test('a hand edit survives a later sync', function () {
         ->patch(route('transactions.update', $transaction), [
             'name' => 'Weekly shop',
             'category' => 'groceries',
-            'notes' => 'split with Sam #shared',
+            'notes' => 'split with Sam',
         ]);
 
     app(SyncMonzoConnection::class)->handle($connection, initial: true);
@@ -105,8 +105,7 @@ test('a hand edit survives a later sync', function () {
 
     expect($transaction->name)->toBe('Weekly shop');
     expect($transaction->category)->toBe('groceries');
-    expect($transaction->notes)->toBe('split with Sam #shared');
-    expect($transaction->tags)->toBe(['shared']);
+    expect($transaction->notes)->toBe('split with Sam');
 
     /** Untouched bank fields still track the bank. */
     expect($transaction->merchant_name)->toBe('Tesco');
@@ -114,8 +113,58 @@ test('a hand edit survives a later sync', function () {
     expect(Transaction::count())->toBe(1);
 });
 
-test('editing notes re-derives the tags', function () {
-    $transaction = Transaction::factory()->forAccount($this->account)->create(['tags' => null]);
+test('a synced row starts unprocessed and stays marked off once the user marks it', function () {
+    Http::preventStrayRequests();
+
+    $connection = BankConnection::factory()->for($this->user)->create();
+
+    $this->account->forceFill([
+        'bank_connection_id' => $connection->id,
+        'external_id' => 'acc_1',
+    ])->save();
+
+    $payload = [
+        'id' => 'tx_1',
+        'created' => '2026-03-01T12:00:00Z',
+        'description' => 'TESCO STORES 3297',
+        'amount' => -1250,
+        'currency' => 'GBP',
+        'category' => 'general',
+        'merchant' => ['id' => 'm_1', 'name' => 'Tesco'],
+    ];
+
+    Http::fake([
+        'api.monzo.com/accounts*' => Http::response(['accounts' => [
+            ['id' => 'acc_1', 'description' => 'Current account', 'type' => 'uk_retail'],
+        ]]),
+        'api.monzo.com/transactions*' => Http::response(['transactions' => [$payload]]),
+    ]);
+
+    app(SyncMonzoConnection::class)->handle($connection, initial: true);
+
+    $transaction = Transaction::first();
+
+    /** An imported row arrives unread. */
+    expect($transaction->processed)->toBeFalse();
+
+    $this->actingAs($this->user)
+        ->from(route('transactions.index'))
+        ->patch(route('transactions.update', $transaction), ['processed' => true]);
+
+    app(SyncMonzoConnection::class)->handle($connection, initial: true);
+
+    expect($transaction->fresh()->processed)->toBeTrue();
+});
+
+/**
+ * Tags have their own field in the edit dialog, so a hand edit never re-reads
+ * the note. Lifting "#word" out of a note is the bank's convention and belongs
+ * to the import, not to editing.
+ */
+test('editing notes leaves the tags alone', function () {
+    $transaction = Transaction::factory()->forAccount($this->account)->create([
+        'tags' => ['shared'],
+    ]);
 
     $this->actingAs($this->user)
         ->from(route('transactions.index'))
@@ -123,20 +172,116 @@ test('editing notes re-derives the tags', function () {
             'notes' => 'Client dinner #work #billable',
         ]);
 
-    expect($transaction->fresh()->tags)->toBe(['work', 'billable']);
+    $transaction->refresh();
+
+    expect($transaction->notes)->toBe('Client dinner #work #billable');
+    expect($transaction->tags)->toBe(['shared']);
+    expect($transaction->isOverridden('tags'))->toBeFalse();
 });
 
-test('tags sent explicitly win over tags parsed from notes', function () {
+test('tags are edited on their own and recorded as an override', function () {
+    $transaction = Transaction::factory()->forAccount($this->account)->create([
+        'tags' => ['shared'],
+    ]);
+
+    $this->actingAs($this->user)
+        ->from(route('transactions.index'))
+        ->patch(route('transactions.update', $transaction), [
+            'tags' => ['work', 'billable'],
+        ])
+        ->assertSessionHasNoErrors();
+
+    $transaction->refresh();
+
+    expect($transaction->tags)->toBe(['work', 'billable']);
+    expect($transaction->isOverridden('tags'))->toBeTrue();
+    expect($transaction->isOverridden('notes'))->toBeFalse();
+});
+
+test('a tag is stored the one way however it was typed', function () {
     $transaction = Transaction::factory()->forAccount($this->account)->create();
 
     $this->actingAs($this->user)
         ->from(route('transactions.index'))
         ->patch(route('transactions.update', $transaction), [
-            'notes' => 'Client dinner #work',
-            'tags' => ['personal'],
-        ]);
+            'tags' => ['#Work', ' client dinner ', 'work', ''],
+        ])
+        ->assertSessionHasNoErrors();
 
-    expect($transaction->fresh()->tags)->toBe(['personal']);
+    expect($transaction->fresh()->tags)->toBe(['work', 'client-dinner']);
+});
+
+/**
+ * Null rather than [], so a row cleared of its tags reads the same as a row
+ * that never had any. The facets query looks for a null.
+ */
+test('clearing every tag stores null', function () {
+    $transaction = Transaction::factory()->forAccount($this->account)->create([
+        'tags' => ['work'],
+    ]);
+
+    $this->actingAs($this->user)
+        ->from(route('transactions.index'))
+        ->patch(route('transactions.update', $transaction), ['tags' => []])
+        ->assertSessionHasNoErrors();
+
+    expect($transaction->fresh()->tags)->toBeNull();
+});
+
+test('a hand edited tag survives a later sync', function () {
+    Http::preventStrayRequests();
+
+    $connection = BankConnection::factory()->for($this->user)->create();
+
+    $this->account->forceFill([
+        'bank_connection_id' => $connection->id,
+        'external_id' => 'acc_1',
+    ])->save();
+
+    $payload = [
+        'id' => 'tx_1',
+        'created' => '2026-03-01T12:00:00Z',
+        'description' => 'DISHOOM',
+        'notes' => 'dinner #personal',
+        'amount' => -4200,
+        'currency' => 'GBP',
+    ];
+
+    Http::fake([
+        'api.monzo.com/accounts*' => Http::response(['accounts' => [
+            ['id' => 'acc_1', 'description' => 'Current account', 'type' => 'uk_retail'],
+        ]]),
+        'api.monzo.com/transactions*' => Http::response(['transactions' => [$payload]]),
+    ]);
+
+    app(SyncMonzoConnection::class)->handle($connection, initial: true);
+
+    $transaction = Transaction::first();
+
+    expect($transaction->tags)->toBe(['personal']);
+
+    $this->actingAs($this->user)
+        ->from(route('transactions.index'))
+        ->patch(route('transactions.update', $transaction), ['tags' => ['work', 'billable']]);
+
+    app(SyncMonzoConnection::class)->handle($connection, initial: true);
+
+    $transaction->refresh();
+
+    expect($transaction->tags)->toBe(['work', 'billable']);
+    /** The note itself is still the bank's. */
+    expect($transaction->notes)->toBe('dinner #personal');
+});
+
+test('a tag that is too long is rejected', function () {
+    $transaction = Transaction::factory()->forAccount($this->account)->create();
+
+    $this->actingAs($this->user)
+        ->from(route('transactions.index'))
+        ->patch(route('transactions.update', $transaction), [
+            'tags' => [str_repeat('a', 51)],
+        ])
+        ->assertSessionHasErrors('tags.0');
 });
 
 test('the amount can be corrected by hand', function () {
@@ -153,6 +298,7 @@ test('the amount can be corrected by hand', function () {
     expect($transaction->isOverridden('amount_minor'))->toBeTrue();
 });
 
+<<<<<<< Updated upstream
 test('an accounting date can be set by hand', function () {
     $transaction = Transaction::factory()->forAccount($this->account)->create([
         'booked_at' => '2026-06-20 19:00:00',
@@ -261,6 +407,51 @@ test('a hand set accounting date survives a later sync', function () {
     app(SyncMonzoConnection::class)->handle($connection, initial: true);
 
     expect($transaction->fresh()->accounting_date->toDateString())->toBe('2026-02-20');
+=======
+test('marking a transaction processed is not recorded as an override', function () {
+    $transaction = Transaction::factory()->forAccount($this->account)->create();
+
+    expect($transaction->processed)->toBeFalse();
+
+    $this->actingAs($this->user)
+        ->from(route('transactions.index'))
+        ->patch(route('transactions.update', $transaction), ['processed' => true])
+        ->assertSessionHasNoErrors();
+
+    $transaction->refresh();
+
+    expect($transaction->processed)->toBeTrue();
+
+    /**
+     * `processed` is the user's own bookkeeping rather than a value the bank
+     * owns, so there is nothing for a sync to undo and nothing to protect.
+     */
+    expect($transaction->overrides)->toBeNull();
+});
+
+test('a processed transaction can be marked unprocessed again', function () {
+    $transaction = Transaction::factory()->forAccount($this->account)->processed()->create();
+
+    $this->actingAs($this->user)
+        ->from(route('transactions.index'))
+        ->patch(route('transactions.update', $transaction), ['processed' => false]);
+
+    expect($transaction->fresh()->processed)->toBeFalse();
+});
+
+/** Editing anything else must not quietly mark the row off, or vice versa. */
+test('an edit that says nothing about processed leaves it alone', function () {
+    $transaction = Transaction::factory()->forAccount($this->account)->processed()->create();
+
+    $this->actingAs($this->user)
+        ->from(route('transactions.index'))
+        ->patch(route('transactions.update', $transaction), ['name' => 'Weekly shop']);
+
+    $transaction->refresh();
+
+    expect($transaction->name)->toBe('Weekly shop');
+    expect($transaction->processed)->toBeTrue();
+>>>>>>> Stashed changes
 });
 
 test('an invalid category is rejected', function () {

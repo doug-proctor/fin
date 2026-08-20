@@ -3,7 +3,6 @@
 namespace App\Actions\Transactions;
 
 use App\Models\Transaction;
-use App\Support\Transactions\TransactionData;
 
 /**
  * Applies a hand edit.
@@ -11,17 +10,27 @@ use App\Support\Transactions\TransactionData;
  * Every bank-owned field the user touches is recorded in the overrides map, so
  * the next sync leaves it alone. That is what makes the table safe to correct
  * without the bank quietly undoing the correction.
+ *
+ * Notes and tags are two separate fields here. Lifting "#word" out of a note
+ * is the bank's convention, applied by TransactionData when a note arrives on
+ * an import; a hand edit does not re-read the note, so editing the wording can
+ * never quietly rewrite the tags and editing the tags never rewrites the note.
  */
 class UpdateTransaction
 {
     /**
      * @param  array<string, mixed>  $attributes  Bank fields the user edited.
+     * @param  bool|null  $processed  The new processed state, or null to leave it alone.
      */
-    public function handle(Transaction $transaction, array $attributes): Transaction
-    {
+    public function handle(
+        Transaction $transaction,
+        array $attributes,
+        ?bool $processed = null,
+    ): Transaction {
         if ($attributes !== []) {
             $transaction->fill($attributes);
 
+<<<<<<< Updated upstream
             /**
              * Editing the notes rewrites the tags too, unless tags were set in
              * the same edit, so the "#tag" convention keeps working.
@@ -42,6 +51,9 @@ class UpdateTransaction
             if ($overridden !== []) {
                 $transaction->markOverridden($overridden);
             }
+=======
+            $transaction->markOverridden(array_keys($attributes));
+>>>>>>> Stashed changes
 
             /**
              * A category chosen by hand outranks both the provider's guess and
@@ -51,6 +63,15 @@ class UpdateTransaction
                 $transaction->categorised_by = 'user';
                 $transaction->category_rule_id = null;
             }
+        }
+
+        /**
+         * Set outside the overrides map on purpose. Marking a row off is the
+         * user's own bookkeeping, not a correction to something the bank sent,
+         * so no sync would ever write over it anyway.
+         */
+        if ($processed !== null) {
+            $transaction->processed = $processed;
         }
 
         $transaction->save();

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { FacetedFilter } from '@/components/transactions/faceted-filter';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
     Collapsible,
     CollapsibleContent,
@@ -155,6 +156,7 @@ export function TransactionsFilterBar({
         filters.direction && filters.direction !== 'all' ? 1 : 0,
         filters.amount_min ? 1 : 0,
         filters.amount_max ? 1 : 0,
+        filters.unprocessed ? 1 : 0,
         datePreset !== 'all' ? 1 : 0,
     ].reduce<number>((total, value) => total + (value ?? 0), 0);
 
@@ -395,6 +397,16 @@ export function TransactionsFilterBar({
                             aria-label="Maximum amount"
                         />
                     </div>
+
+                    <label className="flex items-center gap-2 text-sm">
+                        <Checkbox
+                            checked={filters.unprocessed === true}
+                            onCheckedChange={(checked) =>
+                                apply({ unprocessed: checked === true })
+                            }
+                        />
+                        Show unprocessed only
+                    </label>
                 </div>
             </CollapsibleContent>
         </Collapsible>
