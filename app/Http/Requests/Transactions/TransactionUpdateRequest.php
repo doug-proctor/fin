@@ -10,13 +10,15 @@ use Illuminate\Validation\Rule;
 class TransactionUpdateRequest extends FormRequest
 {
     /**
-     * Fields the user may edit directly. Each one that is sent is recorded as
-     * an override so no later sync can undo the edit.
+     * Fields the user may edit directly. Each bank field that is sent is
+     * recorded as an override so no later sync can undo the edit; the rest is
+     * local state no import writes in the first place.
      *
      * @var array<int, string>
      */
     public const EDITABLE = [
         'booked_at',
+        'accounting_date',
         'name',
         'description',
         'category',
@@ -42,6 +44,17 @@ class TransactionUpdateRequest extends FormRequest
     {
         return [
             'booked_at' => ['sometimes', 'date'],
+            /**
+             * The month arrows stop at the current month, so a later
+             * accounting date would leave the amount counted in a month the
+             * user cannot reach, with nothing on screen to explain it.
+             */
+            'accounting_date' => [
+                'sometimes',
+                'nullable',
+                'date',
+                'before_or_equal:'.now()->endOfMonth()->toDateString(),
+            ],
             'name' => ['sometimes', 'nullable', 'string', 'max:255'],
             'description' => ['sometimes', 'nullable', 'string', 'max:2000'],
             'category' => ['sometimes', 'nullable', Rule::exists(Category::class, 'value')

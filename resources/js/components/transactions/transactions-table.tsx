@@ -53,6 +53,30 @@ const COLUMNS_BEFORE_MONEY = MONEY_COLUMN;
 const COLUMNS_AFTER_MONEY = COLUMNS.length - MONEY_COLUMN - 1;
 
 /**
+ * A row that counts towards a different month is marked in the month it
+ * counts in, so it can be told apart from the ones that were actually booked
+ * there. In the month it was booked it is greyed out instead.
+ */
+const TIME_TRAVELLER = '\u{1F47D}';
+
+/**
+ * The month an accounting date falls in, written out.
+ *
+ * The T00:00:00 matters: a bare 'YYYY-MM-DD' parses as UTC midnight and reads
+ * as the month before west of Greenwich, which is exactly the boundary this
+ * is describing.
+ */
+function accountingMonthLabel(accountingDate: string): string {
+    return new Date(`${accountingDate}T00:00:00`).toLocaleDateString(
+        undefined,
+        {
+            month: 'long',
+            year: 'numeric',
+        },
+    );
+}
+
+/**
  * A value the user has corrected by hand is marked, because a sync will now
  * leave it alone and that is worth being able to see at a glance.
  */
@@ -151,6 +175,19 @@ export function TransactionsTable({
             isGrouped &&
             transaction.groupKey !== null &&
             transaction.groupKey !== transactions[index - 1]?.groupKey,
+        /** Guarded on the name, so a nameless row keeps its placeholder. */
+        displayName:
+            transaction.timeTravel === 'arrival' && transaction.name
+                ? `${TIME_TRAVELLER} ${transaction.name}`
+                : transaction.name,
+        travelNote:
+            transaction.accountingDate === null
+                ? undefined
+                : transaction.timeTravel === 'ghost'
+                  ? `Counted in ${accountingMonthLabel(transaction.accountingDate)} \u2014 not in this month's totals`
+                  : transaction.timeTravel === 'arrival'
+                    ? `Booked ${formatDate(transaction.bookedAt)} \u2014 counted in this month`
+                    : undefined,
     }));
 
     return (
@@ -203,192 +240,217 @@ export function TransactionsTable({
                     </TableRow>
                 )}
 
-                {rows.map(({ transaction, startsGroup }) => {
-                    const key = transaction.groupKey;
-                    const subtotal = key ? subtotals[key] : undefined;
+                {rows.map(
+                    ({ transaction, startsGroup, displayName, travelNote }) => {
+                        const key = transaction.groupKey;
+                        const subtotal = key ? subtotals[key] : undefined;
 
-                    return (
-                        <Fragment key={transaction.id}>
-                            {startsGroup && key !== null && (
-                                <TableRow className="bg-muted/50 hover:bg-muted/50">
-                                    <TableCell
-                                        colSpan={COLUMNS_BEFORE_MONEY}
-                                        className="font-medium"
-                                    >
-                                        {groupLabel(key)}
-                                        {subtotal && (
-                                            <span className="ml-2 font-normal text-muted-foreground">
-                                                {subtotal.count.toLocaleString()}{' '}
-                                                {subtotal.count === 1
-                                                    ? 'transaction'
-                                                    : 'transactions'}
-                                            </span>
-                                        )}
-                                    </TableCell>
-
-                                    <TableCell
-                                        className={cn(
-                                            'text-right font-medium tabular-nums',
-                                            subtotal &&
-                                                subtotal.net < 0 &&
-                                                'text-rose-600 dark:text-rose-400',
-                                            subtotal &&
-                                                subtotal.net > 0 &&
-                                                'text-emerald-600 dark:text-emerald-400',
-                                        )}
-                                    >
-                                        {subtotal
-                                            ? formatMoney(subtotal.net, 'GBP', {
-                                                  signed: true,
-                                              })
-                                            : null}
-                                    </TableCell>
-
-                                    {Array.from({
-                                        length: COLUMNS_AFTER_MONEY,
-                                    }).map((_, index) => (
-                                        <TableCell key={index} />
-                                    ))}
-                                </TableRow>
-                            )}
-
-                            {/*
-                             * The whole row opens the edit dialog, but a click
-                             * handler on a <tr> is invisible to a keyboard, and
-                             * giving the row a button role would cost the table
-                             * its semantics. So the mouse gets the row and the
-                             * keyboard gets the real button in the name cell.
-                             */}
-                            <TableRow
-                                onClick={() => onEdit(transaction)}
-                                className="cursor-pointer"
-                            >
-                                <TableCell>
-                                    <AccountProviderIcon
-                                        provider={transaction.accountProvider}
-                                        accountName={transaction.accountName}
-                                    />
-                                </TableCell>
-
-                                <TableCell className="whitespace-nowrap text-muted-foreground">
-                                    <CellText
-                                        value={formatDate(transaction.bookedAt)}
-                                        isOverridden={transaction.overriddenFields.includes(
-                                            'booked_at',
-                                        )}
-                                    />
-                                </TableCell>
-
-                                <TableCell className="max-w-[16rem]">
-                                    <button
-                                        type="button"
-                                        onClick={() => onEdit(transaction)}
-                                        aria-label={`Edit ${transaction.name ?? 'transaction'}`}
-                                        className="w-full rounded text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-                                    >
-                                        <CellText
-                                            value={transaction.name}
-                                            isOverridden={transaction.overriddenFields.includes(
-                                                'name',
+                        return (
+                            <Fragment key={transaction.id}>
+                                {startsGroup && key !== null && (
+                                    <TableRow className="bg-muted/50 hover:bg-muted/50">
+                                        <TableCell
+                                            colSpan={COLUMNS_BEFORE_MONEY}
+                                            className="font-medium"
+                                        >
+                                            {groupLabel(key)}
+                                            {subtotal && (
+                                                <span className="ml-2 font-normal text-muted-foreground">
+                                                    {subtotal.count.toLocaleString()}{' '}
+                                                    {subtotal.count === 1
+                                                        ? 'transaction'
+                                                        : 'transactions'}
+                                                </span>
                                             )}
-                                            className="truncate font-medium"
-                                        />
-                                    </button>
-                                </TableCell>
+                                        </TableCell>
 
-                                <TableCell className="max-w-[18rem]">
-                                    <CellText
-                                        value={transaction.description}
-                                        isOverridden={transaction.overriddenFields.includes(
-                                            'description',
-                                        )}
-                                        className="truncate text-muted-foreground"
-                                    />
-                                </TableCell>
+                                        <TableCell
+                                            className={cn(
+                                                'text-right font-medium tabular-nums',
+                                                subtotal &&
+                                                    subtotal.net < 0 &&
+                                                    'text-rose-600 dark:text-rose-400',
+                                                subtotal &&
+                                                    subtotal.net > 0 &&
+                                                    'text-emerald-600 dark:text-emerald-400',
+                                            )}
+                                        >
+                                            {subtotal
+                                                ? formatMoney(
+                                                      subtotal.net,
+                                                      'GBP',
+                                                      {
+                                                          signed: true,
+                                                      },
+                                                  )
+                                                : null}
+                                        </TableCell>
 
-                                <TableCell className="max-w-[10rem]">
-                                    <span
-                                        className="block truncate"
-                                        title={
-                                            transaction.categorisedBy === 'rule'
-                                                ? 'Set by one of your category rules'
-                                                : transaction.categorisedBy ===
-                                                    'user'
-                                                  ? 'Set by you \u2014 syncs will not change it'
-                                                  : undefined
-                                        }
-                                    >
-                                        {transaction.categoryLabel ?? (
-                                            <span className="text-muted-foreground">
-                                                Uncategorised
-                                            </span>
-                                        )}
-                                    </span>
-                                </TableCell>
+                                        {Array.from({
+                                            length: COLUMNS_AFTER_MONEY,
+                                        }).map((_, index) => (
+                                            <TableCell key={index} />
+                                        ))}
+                                    </TableRow>
+                                )}
 
                                 {/*
-                                 * One signed figure rather than two columns:
-                                 * money out reads negative and red, money in
-                                 * positive and green. A row the totals leave
-                                 * out drops the colour instead, so it is
-                                 * visibly not part of the sums above it.
+                                 * The whole row opens the edit dialog, but a click
+                                 * handler on a <tr> is invisible to a keyboard, and
+                                 * giving the row a button role would cost the table
+                                 * its semantics. So the mouse gets the row and the
+                                 * keyboard gets the real button in the name cell.
                                  */}
-                                <TableCell
-                                    title={
-                                        transaction.excludedFromTotals
-                                            ? 'Transfer \u2014 not counted in any total'
-                                            : undefined
-                                    }
+                                <TableRow
+                                    onClick={() => onEdit(transaction)}
+                                    title={travelNote}
                                     className={cn(
-                                        'text-right tabular-nums',
-                                        transaction.excludedFromTotals
-                                            ? 'text-muted-foreground/50'
-                                            : transaction.amountMinor < 0
-                                              ? 'text-rose-600 dark:text-rose-400'
-                                              : 'text-emerald-600 dark:text-emerald-400',
+                                        'cursor-pointer',
+                                        /**
+                                         * Booked here but counted elsewhere, so it
+                                         * is listed for context only and fades to
+                                         * say it is no part of the figures.
+                                         */
+                                        transaction.timeTravel === 'ghost' &&
+                                            'opacity-50',
                                     )}
                                 >
-                                    {formatMoney(
-                                        transaction.amountMinor,
-                                        transaction.currency,
-                                        { signed: true },
-                                    )}
-                                </TableCell>
+                                    <TableCell>
+                                        <AccountProviderIcon
+                                            provider={
+                                                transaction.accountProvider
+                                            }
+                                            accountName={
+                                                transaction.accountName
+                                            }
+                                        />
+                                    </TableCell>
 
-                                <TableCell className="max-w-[16rem]">
-                                    <CellText
-                                        value={transaction.notes}
-                                        isOverridden={transaction.overriddenFields.includes(
-                                            'notes',
+                                    <TableCell className="whitespace-nowrap text-muted-foreground">
+                                        <CellText
+                                            value={formatDate(
+                                                transaction.displayDate,
+                                            )}
+                                            isOverridden={transaction.overriddenFields.includes(
+                                                'booked_at',
+                                            )}
+                                        />
+                                    </TableCell>
+
+                                    <TableCell className="max-w-[16rem]">
+                                        <button
+                                            type="button"
+                                            onClick={() => onEdit(transaction)}
+                                            aria-label={`Edit ${transaction.name ?? 'transaction'}`}
+                                            className="w-full rounded text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                                        >
+                                            <CellText
+                                                value={displayName}
+                                                isOverridden={transaction.overriddenFields.includes(
+                                                    'name',
+                                                )}
+                                                className="truncate font-medium"
+                                            />
+                                        </button>
+                                    </TableCell>
+
+                                    <TableCell className="max-w-[18rem]">
+                                        <CellText
+                                            value={transaction.description}
+                                            isOverridden={transaction.overriddenFields.includes(
+                                                'description',
+                                            )}
+                                            className="truncate text-muted-foreground"
+                                        />
+                                    </TableCell>
+
+                                    <TableCell className="max-w-[10rem]">
+                                        <span
+                                            className="block truncate"
+                                            title={
+                                                transaction.categorisedBy ===
+                                                'rule'
+                                                    ? 'Set by one of your category rules'
+                                                    : transaction.categorisedBy ===
+                                                        'user'
+                                                      ? 'Set by you \u2014 syncs will not change it'
+                                                      : undefined
+                                            }
+                                        >
+                                            {transaction.categoryLabel ?? (
+                                                <span className="text-muted-foreground">
+                                                    Uncategorised
+                                                </span>
+                                            )}
+                                        </span>
+                                    </TableCell>
+
+                                    {/*
+                                     * One signed figure rather than two columns:
+                                     * money out reads negative and red, money in
+                                     * positive and green. An amount the totals
+                                     * leave out drops the colour instead, so it
+                                     * is visibly no part of the sums above it.
+                                     */}
+                                    <TableCell
+                                        title={
+                                            transaction.excludedFromTotals
+                                                ? 'Transfer \u2014 not counted in any total'
+                                                : undefined
+                                        }
+                                        className={cn(
+                                            'text-right tabular-nums',
+                                            transaction.excludedFromTotals ||
+                                                transaction.timeTravel ===
+                                                    'ghost'
+                                                ? 'text-muted-foreground/50'
+                                                : transaction.amountMinor < 0
+                                                  ? 'text-rose-600 dark:text-rose-400'
+                                                  : 'text-emerald-600 dark:text-emerald-400',
                                         )}
-                                        className="truncate"
-                                    />
-                                </TableCell>
+                                    >
+                                        {formatMoney(
+                                            transaction.amountMinor,
+                                            transaction.currency,
+                                            { signed: true },
+                                        )}
+                                    </TableCell>
 
-                                {/*
-                                 * Tags follow the note rather than standing on
-                                 * their own: they are the "#tag" words inside
-                                 * it, rewritten whenever it is edited.
-                                 */}
-                                <TableCell className="max-w-[12rem]">
-                                    {transaction.tags.length > 0 && (
-                                        <div className="flex flex-wrap gap-1">
-                                            {transaction.tags.map((tag) => (
-                                                <Badge
-                                                    key={tag}
-                                                    variant="outline"
-                                                    className="px-1 py-0 text-sm"
-                                                >
-                                                    #{tag}
-                                                </Badge>
-                                            ))}
-                                        </div>
-                                    )}
-                                </TableCell>
-                            </TableRow>
-                        </Fragment>
-                    );
-                })}
+                                    <TableCell className="max-w-[16rem]">
+                                        <CellText
+                                            value={transaction.notes}
+                                            isOverridden={transaction.overriddenFields.includes(
+                                                'notes',
+                                            )}
+                                            className="truncate"
+                                        />
+                                    </TableCell>
+
+                                    {/*
+                                     * Tags follow the note rather than standing on
+                                     * their own: they are the "#tag" words inside
+                                     * it, rewritten whenever it is edited.
+                                     */}
+                                    <TableCell className="max-w-[12rem]">
+                                        {transaction.tags.length > 0 && (
+                                            <div className="flex flex-wrap gap-1">
+                                                {transaction.tags.map((tag) => (
+                                                    <Badge
+                                                        key={tag}
+                                                        variant="outline"
+                                                        className="px-1 py-0 text-sm"
+                                                    >
+                                                        #{tag}
+                                                    </Badge>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </TableCell>
+                                </TableRow>
+                            </Fragment>
+                        );
+                    },
+                )}
             </TableBody>
         </Table>
     );

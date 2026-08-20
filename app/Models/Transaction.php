@@ -18,6 +18,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $external_id
  * @property string $dedupe_hash
  * @property Carbon $booked_at
+ * @property Carbon|null $accounting_date
  * @property int $amount_minor
  * @property string $currency
  * @property string|null $name
@@ -47,6 +48,7 @@ use Illuminate\Support\Carbon;
     'external_id',
     'dedupe_hash',
     'booked_at',
+    'accounting_date',
     'amount_minor',
     'currency',
     'name',
@@ -94,6 +96,7 @@ class Transaction extends Model
     {
         return [
             'booked_at' => 'datetime',
+            'accounting_date' => 'date',
             'tags' => 'array',
             'overrides' => 'array',
             'amount_minor' => 'integer',

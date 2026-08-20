@@ -31,7 +31,17 @@ class UpdateTransaction
                 $attributes['tags'] = $transaction->tags;
             }
 
-            $transaction->markOverridden(array_keys($attributes));
+            /**
+             * Only bank-owned fields are recorded. An override exists to stop
+             * an import writing over a correction, so a column no import
+             * touches has nothing to protect, and an edit that touched none of
+             * them leaves the map alone rather than writing an empty one.
+             */
+            $overridden = array_values(array_intersect(array_keys($attributes), Transaction::BANK_FIELDS));
+
+            if ($overridden !== []) {
+                $transaction->markOverridden($overridden);
+            }
 
             /**
              * A category chosen by hand outranks both the provider's guess and

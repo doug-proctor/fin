@@ -28,6 +28,15 @@ class TransactionPresenter
         return [
             'id' => $transaction->id,
             'bookedAt' => $transaction->booked_at->toIso8601String(),
+            /** The month a row was moved to, and null whenever it never moved. */
+            'accountingDate' => $transaction->accounting_date?->toDateString(),
+            /**
+             * The date this row reads as in the month on screen, which is its
+             * booked date unless it travelled here from another month.
+             */
+            'displayDate' => $this->query->displayDateFor($transaction)->toIso8601String(),
+            /** 'ghost' | 'arrival' | null, so the table can mark a visitor. */
+            'timeTravel' => $this->query->monthRoleFor($transaction),
             'name' => $transaction->name,
             'description' => $transaction->description,
             'category' => $transaction->category,

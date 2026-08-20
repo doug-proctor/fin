@@ -153,6 +153,116 @@ test('the amount can be corrected by hand', function () {
     expect($transaction->isOverridden('amount_minor'))->toBeTrue();
 });
 
+test('an accounting date can be set by hand', function () {
+    $transaction = Transaction::factory()->forAccount($this->account)->create([
+        'booked_at' => '2026-06-20 19:00:00',
+    ]);
+
+    $this->actingAs($this->user)
+        ->from(route('transactions.index'))
+        ->patch(route('transactions.update', $transaction), ['accounting_date' => '2026-05-10'])
+        ->assertSessionHasNoErrors();
+
+    expect($transaction->fresh()->accounting_date->toDateString())->toBe('2026-05-10');
+});
+
+test('an accounting date can be cleared', function () {
+    $transaction = Transaction::factory()->forAccount($this->account)->create([
+        'accounting_date' => '2026-05-10',
+    ]);
+
+    $this->actingAs($this->user)
+        ->from(route('transactions.index'))
+        ->patch(route('transactions.update', $transaction), ['accounting_date' => null])
+        ->assertSessionHasNoErrors();
+
+    expect($transaction->fresh()->accounting_date)->toBeNull();
+});
+
+/**
+ * The accounting date is local state no import writes, so there is nothing for
+ * an override to protect it from.
+ */
+test('an accounting date is not recorded as an override', function () {
+    $transaction = Transaction::factory()->forAccount($this->account)->create();
+
+    $this->actingAs($this->user)
+        ->from(route('transactions.index'))
+        ->patch(route('transactions.update', $transaction), ['accounting_date' => '2026-05-10']);
+
+    $transaction->refresh();
+
+    expect($transaction->isOverridden('accounting_date'))->toBeFalse();
+    expect($transaction->overrides)->toBeNull();
+});
+
+test('editing a bank field alongside an accounting date records only the bank field', function () {
+    $transaction = Transaction::factory()->forAccount($this->account)->create();
+
+    $this->actingAs($this->user)
+        ->from(route('transactions.index'))
+        ->patch(route('transactions.update', $transaction), [
+            'name' => 'Dinner with Sam',
+            'accounting_date' => '2026-05-10',
+        ]);
+
+    $transaction->refresh();
+
+    expect($transaction->isOverridden('name'))->toBeTrue();
+    expect($transaction->isOverridden('accounting_date'))->toBeFalse();
+});
+
+/** The month arrows stop at the current month, so later is unreachable. */
+test('an accounting date after the current month is rejected', function () {
+    $transaction = Transaction::factory()->forAccount($this->account)->create();
+
+    $this->actingAs($this->user)
+        ->from(route('transactions.index'))
+        ->patch(route('transactions.update', $transaction), [
+            'accounting_date' => now()->addMonths(2)->toDateString(),
+        ])
+        ->assertSessionHasErrors('accounting_date');
+
+    expect($transaction->fresh()->accounting_date)->toBeNull();
+});
+
+test('a hand set accounting date survives a later sync', function () {
+    Http::preventStrayRequests();
+
+    $connection = BankConnection::factory()->for($this->user)->create();
+
+    $this->account->forceFill([
+        'bank_connection_id' => $connection->id,
+        'external_id' => 'acc_1',
+    ])->save();
+
+    Http::fake([
+        'api.monzo.com/accounts*' => Http::response(['accounts' => [
+            ['id' => 'acc_1', 'description' => 'Current account', 'type' => 'uk_retail'],
+        ]]),
+        'api.monzo.com/transactions*' => Http::response(['transactions' => [[
+            'id' => 'tx_1',
+            'created' => '2026-03-01T12:00:00Z',
+            'description' => 'DINNER',
+            'amount' => -4500,
+            'currency' => 'GBP',
+            'category' => 'eating_out',
+        ]]]),
+    ]);
+
+    app(SyncMonzoConnection::class)->handle($connection, initial: true);
+
+    $transaction = Transaction::first();
+
+    $this->actingAs($this->user)
+        ->from(route('transactions.index'))
+        ->patch(route('transactions.update', $transaction), ['accounting_date' => '2026-02-20']);
+
+    app(SyncMonzoConnection::class)->handle($connection, initial: true);
+
+    expect($transaction->fresh()->accounting_date->toDateString())->toBe('2026-02-20');
+});
+
 test('an invalid category is rejected', function () {
     $transaction = Transaction::factory()->forAccount($this->account)->create();
 
